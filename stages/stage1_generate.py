@@ -393,6 +393,7 @@ def run_stage1(cfg: GenerationConfig, hash_cfg: HashConfig) -> Path:
             "delta": cfg.delta,
             "lambda": cfg.lam,
             "num_examples": len(merged),
+            "max_new_tokens": cfg.max_new_tokens,
         }
         write_json(cfg.metadata_path, meta_payload)
 

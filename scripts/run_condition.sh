@@ -31,7 +31,26 @@ case "${METHOD}" in
 esac
 
 cd "${REPO_ROOT}"
-./pipeline.sh
+stage1_batches=("${STAGE1_BATCH}")
+fallback_batch="${STAGE1_BATCH}"
+while (( fallback_batch > 2 )); do
+  fallback_batch=$(( (fallback_batch + 1) / 2 ))
+  stage1_batches+=("${fallback_batch}")
+done
+
+pipeline_complete=0
+for stage1_batch in "${stage1_batches[@]}"; do
+  echo "Running ${method_label} with STAGE1_BATCH=${stage1_batch}"
+  if STAGE1_BATCH="${stage1_batch}" ./pipeline.sh; then
+    pipeline_complete=1
+    break
+  fi
+  echo "${method_label}: batch ${stage1_batch} failed; preserving resumable checkpoints."
+done
+if (( pipeline_complete == 0 )); then
+  echo "${method_label}: all Stage 1 batch fallbacks failed." >&2
+  exit 1
+fi
 
 lr_tag="$("${CONDA_ENV_PREFIX}/bin/python" -c 'import sys; print(f"{float(sys.argv[1]):g}")' "${LEARNING_RATE}")"
 adapter="${EXPERIMENT_DIR}/models/${STUDENT_TAG_OVERRIDE}_${method_label}_lr${lr_tag}_e${EPOCHS}/student_lora"
