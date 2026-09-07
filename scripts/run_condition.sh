@@ -53,6 +53,8 @@ if [[ ! -f "${student_eval}/student.summary.json" ]]; then
     --max-samples "${EVAL_SAMPLES}" --batch-size "${UTILITY_EVAL_BATCH}" \
     --max-new-tokens "${UTILITY_MAX_NEW_TOKENS}" --output "${student_eval}/student.jsonl"
 fi
-"${CONDA_ENV_PREFIX}/bin/python" "${REPO_ROOT}/scripts/compare_eval.py" \
+if ! "${CONDA_ENV_PREFIX}/bin/python" "${REPO_ROOT}/scripts/compare_eval.py" \
   "${base_eval}/base.jsonl" "${student_eval}/student.jsonl" \
-  --min-gain 0 --alpha 0.05 --output "${student_eval}/comparison_to_base.json"
+  --min-gain 0 --alpha 0.05 --output "${student_eval}/comparison_to_base.json"; then
+  echo "${method_label}: utility did not significantly improve; result recorded."
+fi
