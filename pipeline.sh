@@ -103,6 +103,7 @@ TOP_P="${TOP_P:-0.95}"
 REPETITION_PENALTY="${REPETITION_PENALTY:-1.0}"
 STAGE1_BATCH="${STAGE1_BATCH:-64}"
 EVAL_BATCH="${EVAL_BATCH:-32}"
+STAGE4_BATCH="${STAGE4_BATCH:-${EVAL_BATCH}}"
 MAX_ANSWER_TOKENS="${MAX_ANSWER_TOKENS:-32}"
 EFFECTIVE_FT_BATCH="${EFFECTIVE_FT_BATCH:-8}"
 GRAD_ACCUM="${GRAD_ACCUM:-1}"
@@ -393,7 +394,7 @@ run_stage "Stage 4 – Watermark Eval (open, supervised)" "$SENTINELS_DIR/stage4
     --mode "open" \
     --supervision "supervised" \
     --output "$METRIC_OPEN_SUP" \
-    --batch-size "$EVAL_BATCH" \
+    --batch-size "$STAGE4_BATCH" \
     --seed "$TRAIN_SEED" \
     --dataset "$DATASET"
 
@@ -411,7 +412,7 @@ run_stage "Stage 4 – Watermark Eval (closed, supervised)" "$SENTINELS_DIR/stag
     --mode "closed" \
     --supervision "supervised" \
     --output "$METRIC_CLOSED_SUP" \
-    --batch-size "$EVAL_BATCH" \
+    --batch-size "$STAGE4_BATCH" \
     --seed "$TRAIN_SEED" \
     --dataset "$DATASET"
 
@@ -429,7 +430,7 @@ run_stage "Stage 4 – Watermark Eval (open, unsupervised)" "$SENTINELS_DIR/stag
     --mode "open" \
     --supervision "unsupervised" \
     --output "$METRIC_OPEN_UNSUP" \
-    --batch-size "$EVAL_BATCH" \
+    --batch-size "$STAGE4_BATCH" \
     --seed "$ALT_SEED" \
     --dataset "$DATASET"
 
@@ -447,7 +448,7 @@ run_stage "Stage 4 – Watermark Eval (closed, unsupervised)" "$SENTINELS_DIR/st
     --mode "closed" \
     --supervision "unsupervised" \
     --output "$METRIC_CLOSED_UNSUP" \
-    --batch-size "$EVAL_BATCH" \
+    --batch-size "$STAGE4_BATCH" \
     --seed "$ALT_SEED" \
     --dataset "$DATASET"
 

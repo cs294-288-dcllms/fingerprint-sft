@@ -12,9 +12,20 @@ from models.lora import lora_target_modules
 from models.prompts import OASST1_SYSTEM_PROMPT, PromptBuilder
 from peft import LoraConfig, PeftModel
 from trl import SFTConfig, SFTTrainer
+from transformers.trainer_utils import get_last_checkpoint
 from utils.env import set_global_seed
 from utils.io import read_jsonl_rows
 from utils.tokenization import load_tokenizer
+
+SFT_SAVE_STEPS = 50
+SFT_SAVE_TOTAL_LIMIT = 2
+
+
+def _latest_checkpoint(output_dir: Path) -> str | None:
+    """Return the newest Trainer checkpoint when interrupted SFT can resume."""
+    if not output_dir.is_dir():
+        return None
+    return get_last_checkpoint(str(output_dir))
 
 
 def _mask_prompt(tokenizer, prompt: str, response: str, max_length: int) -> dict[str, list[int]]:
@@ -151,7 +162,9 @@ def run_stage3(cfg: FinetuneConfig) -> Path:
         max_steps=-1,
         warmup_ratio=0.0,
         logging_steps=10,
-        save_strategy="no",
+        save_strategy="steps",
+        save_steps=SFT_SAVE_STEPS,
+        save_total_limit=SFT_SAVE_TOTAL_LIMIT,
         dataset_text_field=None,
         report_to=[],
         remove_unused_columns=False,
@@ -174,7 +187,10 @@ def run_stage3(cfg: FinetuneConfig) -> Path:
     if lora is not None:
         trainer_kwargs["peft_config"] = lora
     trainer = SFTTrainer(**trainer_kwargs)
-    trainer.train()
+    resume_checkpoint = _latest_checkpoint(cfg.output_dir)
+    if resume_checkpoint and trainer.is_world_process_zero():
+        print(f"Stage 3: resuming from {resume_checkpoint}", flush=True)
+    trainer.train(resume_from_checkpoint=resume_checkpoint)
     trainer.save_model()
     tokenizer.save_pretrained(cfg.output_dir)
     return cfg.output_dir

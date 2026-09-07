@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
@@ -22,6 +23,85 @@ from models.prompts import OASST1_SYSTEM_PROMPT, PromptBuilder
 from utils.tokenization import compute_overlap, load_tokenizer
 
 EvalEntry = Tuple[Tuple[int, int], float]
+QWEN35_SCIENCE_BATCH_CAP = 4
+
+
+def _effective_batch_size(
+    requested: int, dataset: str, student_model: str
+) -> int:
+    """Cap long-context Qwen3.5 science evaluation to fit 48 GB GPUs."""
+    batch_size = max(1, requested)
+    if dataset.lower() == "science" and "qwen3.5" in student_model.lower():
+        batch_size = min(batch_size, QWEN35_SCIENCE_BATCH_CAP)
+    return batch_size
+
+
+def _load_stage4_checkpoint(path: Path) -> tuple[set[int], List[EvalEntry]]:
+    """Load valid per-batch measurements and truncate a partial final write."""
+    completed_positions: set[int] = set()
+    entries: List[EvalEntry] = []
+    if not path.exists():
+        return completed_positions, entries
+    valid_bytes = 0
+    with path.open("rb") as handle:
+        while line := handle.readline():
+            if not line.strip():
+                valid_bytes = handle.tell()
+                continue
+            try:
+                payload = json.loads(line)
+                positions = payload["positions"]
+                measurements = payload["entries"]
+                if (
+                    not isinstance(positions, list)
+                    or not all(isinstance(position, int) for position in positions)
+                    or not isinstance(measurements, list)
+                ):
+                    break
+                decoded = [
+                    (
+                        (int(entry["bigram"][0]), int(entry["bigram"][1])),
+                        float(entry["value"]),
+                    )
+                    for entry in measurements
+                ]
+            except (
+                KeyError,
+                IndexError,
+                TypeError,
+                ValueError,
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+            ):
+                break
+            completed_positions.update(positions)
+            entries.extend(decoded)
+            valid_bytes = handle.tell()
+    if path.stat().st_size != valid_bytes:
+        with path.open("r+b") as handle:
+            handle.truncate(valid_bytes)
+    return completed_positions, entries
+
+
+def _append_stage4_checkpoint(
+    path: Path,
+    positions: Sequence[int],
+    entries: Sequence[EvalEntry],
+) -> None:
+    """Durably append one completed Stage 4 batch."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "positions": list(positions),
+        "entries": [
+            {"bigram": list(bigram), "value": value}
+            for bigram, value in entries
+        ],
+    }
+    with path.open("a", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _build_student_shared_mask(student_tokenizer, shared_tokens: set[str]) -> torch.BoolTensor:
@@ -132,20 +212,42 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
     student_model.eval()
 
     local_rows = traces[accelerator.process_index :: accelerator.num_processes]
-    tmp_dir = cfg.output_path.parent / "_tmp_stage4"
+    tmp_dir = cfg.output_path.parent / f"_tmp_stage4_{cfg.output_path.stem}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    rank_path = tmp_dir / f"rank_{accelerator.process_index:03d}.json"
+    rank_path = tmp_dir / f"rank_{accelerator.process_index:03d}.jsonl"
 
     student_shared_mask = shared_mask
-    local_values: List[EvalEntry] = []
+    completed_positions, _ = _load_stage4_checkpoint(rank_path)
 
-    batch_size = max(1, cfg.batch_size)
-    iterator = range(0, len(local_rows), batch_size)
+    batch_size = _effective_batch_size(
+        cfg.batch_size,
+        cfg.dataset,
+        cfg.student.name,
+    )
+    if accelerator.is_local_main_process and batch_size != max(1, cfg.batch_size):
+        print(
+            "Stage 4 memory guard: "
+            f"batch {cfg.batch_size} -> {batch_size} for "
+            f"{cfg.dataset}/{cfg.student.name}.",
+            flush=True,
+        )
+    pending_positions = [
+        position
+        for position in range(len(local_rows))
+        if position not in completed_positions
+    ]
+    iterator = range(0, len(pending_positions), batch_size)
     if accelerator.is_local_main_process:
-        iterator = tqdm(iterator, total=(len(local_rows) + batch_size - 1) // batch_size, desc="Stage 4: watermark eval")
+        iterator = tqdm(
+            iterator,
+            total=(len(pending_positions) + batch_size - 1) // batch_size,
+            desc="Stage 4: watermark eval",
+        )
 
-    for start in iterator:
-        batch = local_rows[start : start + batch_size]
+    for pending_start in iterator:
+        positions = pending_positions[pending_start : pending_start + batch_size]
+        batch = [local_rows[position] for position in positions]
+        batch_values: List[EvalEntry] = []
         prompts: List[str] = []
         texts: List[str] = []
         prompt_lengths: List[int] = []
@@ -208,6 +310,7 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
                 batch_sample_indices.append(int(idx))
 
         if not batch_bigrams:
+            _append_stage4_checkpoint(rank_path, positions, batch_values)
             continue
 
         mask_chunk = max(1, cfg.mask_chunk)
@@ -242,7 +345,7 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
                 green_mass = (probs * student_masks).sum(dim=-1)
                 values = (green_mass / shared_mass).tolist()
                 for bigram, value in zip(bg_chunk, values):
-                    local_values.append((bigram, float(value)))
+                    batch_values.append((bigram, float(value)))
             else:
                 samples = torch.multinomial(probs, num_samples=1).squeeze(-1)
                 shared_flags = shared[samples]
@@ -250,29 +353,20 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
                 for bigram, is_shared, hit in zip(bg_chunk, shared_flags.tolist(), hits.tolist()):
                     if not is_shared:
                         continue  # discard samples outside the shared vocabulary
-                    local_values.append((bigram, float(hit)))
+                    batch_values.append((bigram, float(hit)))
 
-    with rank_path.open("w", encoding="utf-8") as handle:
-        json.dump(
-            [
-                {"bigram": list(bigram), "value": value}
-                for bigram, value in local_values
-            ],
-            handle,
-        )
+        _append_stage4_checkpoint(rank_path, positions, batch_values)
 
     accelerator.wait_for_everyone()
 
     if accelerator.is_main_process:
         all_entries: List[Tuple[Tuple[int, int], float]] = []
         for idx in range(accelerator.num_processes):
-            shard = tmp_dir / f"rank_{idx:03d}.json"
+            shard = tmp_dir / f"rank_{idx:03d}.jsonl"
             if not shard.exists():
                 continue
-            with shard.open("r", encoding="utf-8") as handle:
-                data = json.load(handle)
-                for entry in data:
-                    all_entries.append((tuple(entry["bigram"]), float(entry["value"])))
+            _, shard_entries = _load_stage4_checkpoint(shard)
+            all_entries.extend(shard_entries)
         if not all_entries:
             payload = {
                 "num_measurements": 0,
@@ -298,7 +392,7 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
                 "supervision": cfg.supervision,
             }
         write_json(cfg.output_path, payload)
-        for shard in tmp_dir.glob("rank_*.json"):
+        for shard in tmp_dir.glob("rank_*.jsonl"):
             shard.unlink()
         tmp_dir.rmdir()
     accelerator.wait_for_everyone()

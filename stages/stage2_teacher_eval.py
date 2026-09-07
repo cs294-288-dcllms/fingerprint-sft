@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Sequence
@@ -30,6 +32,74 @@ SCIENCE_ANSWER_PATTERN = re.compile(
     r"(?:final\s+answer|answer|option|choice)\s*(?:is|:)?\s*[*\\(\[]*([A-D])\b",
     re.IGNORECASE,
 )
+
+
+def _load_stage2_checkpoint(path: Path) -> tuple[set[int], int, int, int]:
+    """Load valid batch counts and truncate a partial final write."""
+    completed_positions: set[int] = set()
+    raw_correct = 0
+    forced_correct = 0
+    total = 0
+    if not path.exists():
+        return completed_positions, raw_correct, forced_correct, total
+    valid_bytes = 0
+    with path.open("rb") as handle:
+        while line := handle.readline():
+            if not line.strip():
+                valid_bytes = handle.tell()
+                continue
+            try:
+                payload = json.loads(line)
+                positions = payload["positions"]
+                if (
+                    not isinstance(positions, list)
+                    or not all(isinstance(position, int) for position in positions)
+                ):
+                    break
+                batch_raw = int(payload["raw_correct"])
+                batch_forced = int(payload["forced_correct"])
+                batch_total = int(payload["total"])
+                if min(batch_raw, batch_forced, batch_total) < 0:
+                    break
+            except (
+                KeyError,
+                TypeError,
+                ValueError,
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+            ):
+                break
+            completed_positions.update(positions)
+            raw_correct += batch_raw
+            forced_correct += batch_forced
+            total += batch_total
+            valid_bytes = handle.tell()
+    if path.stat().st_size != valid_bytes:
+        with path.open("r+b") as handle:
+            handle.truncate(valid_bytes)
+    return completed_positions, raw_correct, forced_correct, total
+
+
+def _append_stage2_checkpoint(
+    path: Path,
+    positions: Sequence[int],
+    raw_correct: int,
+    forced_correct: int,
+    total: int,
+) -> None:
+    """Durably append one completed Stage 2 batch."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "positions": list(positions),
+        "raw_correct": raw_correct,
+        "forced_correct": forced_correct,
+        "total": total,
+    }
+    with path.open("a", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _is_correct(candidate: str, solution: str) -> bool:
@@ -264,15 +334,28 @@ def run_stage2(cfg: TeacherEvalConfig) -> Path:
 
     local_traces = traces[accelerator.process_index :: accelerator.num_processes]
 
-    raw_correct = 0
-    forced_correct = 0
-    total = 0
+    tmp_dir = cfg.output_path.parent / f"_tmp_stage2_{cfg.output_path.stem}"
+    rank_path = tmp_dir / f"rank_{accelerator.process_index:03d}.jsonl"
+    completed_positions, raw_correct, forced_correct, total = (
+        _load_stage2_checkpoint(rank_path)
+    )
 
-    iterator = _batch(local_traces, max(1, cfg.batch_size))
+    batch_size = max(1, cfg.batch_size)
+    pending_positions = [
+        position
+        for position in range(len(local_traces))
+        if position not in completed_positions
+    ]
+    iterator = _batch(pending_positions, batch_size)
     if accelerator.is_local_main_process:
-        iterator = tqdm(iterator, total=(len(local_traces) + cfg.batch_size - 1) // cfg.batch_size, desc="Stage 2: teacher eval")
+        iterator = tqdm(
+            iterator,
+            total=(len(pending_positions) + batch_size - 1) // batch_size,
+            desc="Stage 2: teacher eval",
+        )
 
-    for chunk in iterator:
+    for positions in iterator:
+        chunk = [local_traces[position] for position in positions]
         prompts: List[str] = []
         solutions: List[str] = []
         raw_predictions: List[str] = []
@@ -310,15 +393,28 @@ def run_stage2(cfg: TeacherEvalConfig) -> Path:
             decoded = tokenizer.batch_decode(generated, skip_special_tokens=False)
         else:
             decoded = tokenizer.batch_decode(outputs, skip_special_tokens=False)
+        batch_raw_correct = 0
+        batch_forced_correct = 0
+        batch_total = 0
         for raw_pred, forced_text, solution in zip(raw_predictions, decoded, solutions):
             if not solution:
                 continue
-            total += 1
+            batch_total += 1
             is_correct = _is_science_correct if cfg.dataset == "science" else _is_correct
             if is_correct(raw_pred, solution):
-                raw_correct += 1
+                batch_raw_correct += 1
             if is_correct(forced_text, solution):
-                forced_correct += 1
+                batch_forced_correct += 1
+        _append_stage2_checkpoint(
+            rank_path,
+            positions,
+            batch_raw_correct,
+            batch_forced_correct,
+            batch_total,
+        )
+        raw_correct += batch_raw_correct
+        forced_correct += batch_forced_correct
+        total += batch_total
 
     counts = torch.tensor(
         [raw_correct, forced_correct, total],
@@ -338,6 +434,9 @@ def run_stage2(cfg: TeacherEvalConfig) -> Path:
             "answer_forced_accuracy": float(forced / denom),
         }
         write_json(cfg.output_path, payload)
+        for shard in tmp_dir.glob("rank_*.jsonl"):
+            shard.unlink()
+        tmp_dir.rmdir()
     accelerator.wait_for_everyone()
     return cfg.output_path
 
