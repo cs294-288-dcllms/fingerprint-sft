@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.env
+.DS_Store
+
+# Generated inputs and experiment artifacts
+data/local/
+outputs/
+experiments/
+wandb/
+*.log
+*.tmp
