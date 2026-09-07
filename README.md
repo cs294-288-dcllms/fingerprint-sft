@@ -45,7 +45,7 @@ The teacher adapter is accepted only when its 1,000-question held-out evaluation
 ./scripts/run_condition.sh configs/strategies/radioactive-delta2.env
 ```
 
-Each strategy creates a separate student LoRA checkpoint.
+Each strategy creates a separate student LoRA checkpoint. Science generation defaults to 3,840 new tokens so long Qwen reasoning traces can reach their final answer while retaining prompt headroom in the SFT window. If generation exceeds GPU memory, the runner halves the Stage 1 batch size and resumes its per-rank checkpoints.
 
 ## Run the complete SFT matrix
 
