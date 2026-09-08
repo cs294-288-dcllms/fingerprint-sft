@@ -2,11 +2,13 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from stages.stage4_watermark_eval import (
     _aggregate_stage4_shards,
     _aligned_offsets,
     _append_stage4_checkpoint,
+    _build_metric_provenance,
     _build_position_batches,
     _effective_batch_size,
     _load_stage4_checkpoint,
@@ -15,6 +17,40 @@ from stages.stage4_watermark_eval import (
 
 
 class Stage4BatchGuardTest(unittest.TestCase):
+    def test_metric_provenance_hashes_exact_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            traces = root / "traces.jsonl"
+            hash_config = root / "hash.json"
+            adapter = root / "adapter"
+            traces.write_text('{"response":"x"}\n', encoding="utf-8")
+            hash_config.write_text('{"seed":1,"gamma":0.5}\n', encoding="utf-8")
+            adapter.mkdir()
+            cfg = SimpleNamespace(
+                dataset="science",
+                traces_jsonl=traces,
+                hash_config=hash_config,
+                lora_dir=adapter,
+                seed=43,
+            )
+
+            provenance = _build_metric_provenance(cfg, 1)
+
+            self.assertEqual(provenance["dataset"], "science")
+            self.assertEqual(provenance["trace_file"], str(traces.resolve()))
+            self.assertEqual(provenance["trace_examples"], 1)
+            self.assertEqual(len(provenance["trace_sha256"]), 64)
+            self.assertEqual(
+                provenance["hash_config_file"],
+                str(hash_config.resolve()),
+            )
+            self.assertEqual(len(provenance["hash_config_sha256"]), 64)
+            self.assertEqual(
+                provenance["student_lora_dir"],
+                str(adapter.resolve()),
+            )
+            self.assertEqual(provenance["seed"], 43)
+
     def test_left_padding_preserves_actual_token_positions(self) -> None:
         offsets = [(0, 0), (0, 0), (0, 1), (1, 3), (3, 6)]
         attention_mask = [0, 0, 1, 1, 1]

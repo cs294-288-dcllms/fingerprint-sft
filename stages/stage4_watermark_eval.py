@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,32 @@ from utils.tokenization import compute_overlap, load_tokenizer
 EvalEntry = Tuple[Tuple[int, int], float]
 QWEN35_SCIENCE_BATCH_CAP = 12
 QWEN35_SCIENCE_TOKEN_BUDGET = 4 * 4096
+
+
+def _sha256_file(path: Path) -> str:
+    """Return the SHA-256 digest of a file without loading it into memory."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _build_metric_provenance(
+    cfg: WatermarkEvalConfig,
+    trace_examples: int,
+) -> dict[str, object]:
+    """Describe the immutable inputs used to produce one Stage 4 metric."""
+    return {
+        "dataset": cfg.dataset,
+        "trace_file": str(cfg.traces_jsonl.resolve()),
+        "trace_examples": int(trace_examples),
+        "trace_sha256": _sha256_file(cfg.traces_jsonl),
+        "hash_config_file": str(cfg.hash_config.resolve()),
+        "hash_config_sha256": _sha256_file(cfg.hash_config),
+        "student_lora_dir": str(cfg.lora_dir.resolve()),
+        "seed": int(cfg.seed),
+    }
 
 
 def _effective_batch_size(
@@ -491,6 +518,7 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
                 "mode": cfg.mode,
                 "supervision": cfg.supervision,
             }
+        payload.update(_build_metric_provenance(cfg, len(traces)))
         write_json(cfg.output_path, payload)
         for shard in tmp_dir.glob("rank_*.jsonl"):
             shard.unlink()
