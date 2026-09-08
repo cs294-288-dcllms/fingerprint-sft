@@ -176,7 +176,7 @@ class BigramHash:
 
     def mask_batch(
         self,
-        bigrams: Iterable[Bigram],
+        bigrams: Iterable[Bigram] | torch.Tensor,
         *,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
@@ -191,8 +191,26 @@ class BigramHash:
         Returns:
             Tensor of shape [B, vocab_size] of masks; empty if no bigrams.
         """
-        bigram_list = list(bigrams)
-        if not bigram_list:
-            return torch.empty(0, self.vocab_size, device=device or "cpu", dtype=dtype or torch.bool)
-        tensor = torch.tensor(bigram_list, device=device or "cpu", dtype=torch.long)
+        if isinstance(bigrams, torch.Tensor):
+            if bigrams.ndim != 2 or bigrams.shape[1] != 2:
+                raise ValueError("bigrams tensor must have shape [batch, 2]")
+            target_device = device or bigrams.device
+            if bigrams.shape[0] == 0:
+                return torch.empty(
+                    0,
+                    self.vocab_size,
+                    device=target_device,
+                    dtype=dtype or torch.bool,
+                )
+            tensor = bigrams.to(device=target_device, dtype=torch.long)
+        else:
+            bigram_list = list(bigrams)
+            if not bigram_list:
+                return torch.empty(
+                    0,
+                    self.vocab_size,
+                    device=device or "cpu",
+                    dtype=dtype or torch.bool,
+                )
+            tensor = torch.tensor(bigram_list, device=device or "cpu", dtype=torch.long)
         return self._sample_mask_vec(tensor, device=device, dtype=dtype or torch.bool)

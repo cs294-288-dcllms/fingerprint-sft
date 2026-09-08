@@ -28,6 +28,19 @@ def _extract_bigram(row: torch.LongTensor) -> Tuple[int, int]:
     return -1, -1
 
 
+def _extract_bigram_batch(input_ids: torch.LongTensor) -> torch.LongTensor:
+    """Return the last two token ids for every row without GPU synchronization."""
+    if input_ids.ndim != 2:
+        raise ValueError("input_ids must have shape [batch, sequence]")
+    batch_size, sequence_length = input_ids.shape
+    if sequence_length >= 2:
+        return input_ids[:, -2:]
+    bigrams = input_ids.new_full((batch_size, 2), -1)
+    if sequence_length == 1:
+        bigrams[:, 1] = input_ids[:, 0]
+    return bigrams
+
+
 class RadioactiveLogitsProcessor(LogitsProcessor):
     """Increase logits for every token that satisfies the hash predicate."""
 
@@ -58,20 +71,16 @@ class RadioactiveLogitsProcessor(LogitsProcessor):
         """
         if self.delta == 0:
             return scores
-        batch_size = input_ids.shape[0]
-        for idx in range(batch_size):
-            if self.eos_token_id is not None and self.eos_token_id < scores.shape[-1]:
-                top = torch.argmax(scores[idx]).item()
-                if top == self.eos_token_id:
-                    continue
-            bigram = _extract_bigram(input_ids[idx])
-            mask = self.hash_fn.mask(
-                bigram,
-                device=scores.device,
-                dtype=scores.dtype,
-            )
-            scores[idx] = scores[idx] + mask * self.delta
-        return scores
+        bigrams = _extract_bigram_batch(input_ids)
+        mask = self.hash_fn.mask_batch(
+            bigrams,
+            device=scores.device,
+            dtype=scores.dtype,
+        )
+        if self.eos_token_id is not None and self.eos_token_id < scores.shape[-1]:
+            active = scores.argmax(dim=-1).ne(self.eos_token_id)
+            mask = mask * active.unsqueeze(-1)
+        return scores + mask * self.delta
 
 
 class CachedProxyModel:
@@ -190,23 +199,18 @@ class ADSLogitsProcessor(LogitsProcessor):
         proxy_logits = self.proxy(input_ids)[:, -1, :]
         proxy_probs = F.softmax(proxy_logits, dim=-1)
 
-        batch_size = input_ids.shape[0]
-        for idx in range(batch_size):
-            if self.eos_token_id is not None and self.eos_token_id < scores.shape[-1]:
-                top = torch.argmax(scores[idx]).item()
-                if top == self.eos_token_id:
-                    continue
-            bigram = _extract_bigram(input_ids[idx])
-            mask = self.hash_fn.mask(
-                bigram,
-                device=scores.device,
-                dtype=proxy_probs.dtype,
-            )
-            mask_prob = torch.dot(proxy_probs[idx], mask)
-            ad_term = proxy_probs[idx] * (mask - mask_prob)
-            scores[idx] = scores[idx] + (self.lam * ad_term.to(scores.dtype))
-
-        return scores
+        bigrams = _extract_bigram_batch(input_ids)
+        mask = self.hash_fn.mask_batch(
+            bigrams,
+            device=scores.device,
+            dtype=proxy_probs.dtype,
+        )
+        mask_prob = (proxy_probs * mask).sum(dim=-1, keepdim=True)
+        ad_term = proxy_probs * (mask - mask_prob)
+        if self.eos_token_id is not None and self.eos_token_id < scores.shape[-1]:
+            active = scores.argmax(dim=-1).ne(self.eos_token_id)
+            ad_term = ad_term * active.unsqueeze(-1)
+        return scores + self.lam * ad_term.to(scores.dtype)
 
 
 __all__ = [
