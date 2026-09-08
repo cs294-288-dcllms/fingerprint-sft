@@ -13,6 +13,10 @@ set +a
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+mkdir -p \
+  "${TRITON_CACHE_DIR}" \
+  "${TORCHINDUCTOR_CACHE_DIR}" \
+  "${CUDA_CACHE_PATH}"
 mkdir -p "${EXPERIMENT_DIR}/teacher_evals/base" "${EXPERIMENT_DIR}/teacher_evals/sft" "${TEACHER_ADAPTER}"
 STATUS_FILE="${EXPERIMENT_DIR}/teacher/status.env"
 mkdir -p "$(dirname "${STATUS_FILE}")"

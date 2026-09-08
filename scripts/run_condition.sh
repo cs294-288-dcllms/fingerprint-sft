@@ -13,6 +13,10 @@ set +a
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+mkdir -p \
+  "${TRITON_CACHE_DIR}" \
+  "${TORCHINDUCTOR_CACHE_DIR}" \
+  "${CUDA_CACHE_PATH}"
 
 [[ -f "${TEACHER_ADAPTER}/adapter_model.safetensors" ]] || {
   echo "Missing trained teacher adapter. Run scripts/run_teacher_sft.sh first." >&2
