@@ -102,6 +102,25 @@ def _append_stage2_checkpoint(
         os.fsync(handle.fileno())
 
 
+def _validate_stage2_completion(
+    completed_positions: set[int],
+    expected_positions: int,
+    total: int,
+) -> None:
+    """Require one evaluable result for every local trace position."""
+    expected = set(range(expected_positions))
+    missing = sorted(expected - completed_positions)
+    unexpected = sorted(completed_positions - expected)
+    if missing or unexpected or total != expected_positions:
+        raise RuntimeError(
+            "Stage 2 evaluation is incomplete or invalid: "
+            f"expected_positions={expected_positions}, "
+            f"completed_positions={len(completed_positions)}, total={total}, "
+            f"missing_positions={missing[:10]}, "
+            f"unexpected_positions={unexpected[:10]}"
+        )
+
+
 def _is_correct(candidate: str, solution: str) -> bool:
     """Check equivalence between a candidate and solution using math_verify.
 
@@ -416,6 +435,12 @@ def run_stage2(cfg: TeacherEvalConfig) -> Path:
         forced_correct += batch_forced_correct
         total += batch_total
 
+    completed_positions.update(pending_positions)
+    _validate_stage2_completion(
+        completed_positions,
+        expected_positions=len(local_traces),
+        total=total,
+    )
     counts = torch.tensor(
         [raw_correct, forced_correct, total],
         dtype=torch.float32,
