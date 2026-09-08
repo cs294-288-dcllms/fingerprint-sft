@@ -1,6 +1,6 @@
 import unittest
 
-from stages.stage3_finetune import _mask_prompt
+from stages.stage3_finetune import _mask_prompt, _validate_training_responses
 
 
 class FakeTokenizer:
@@ -16,6 +16,13 @@ class FakeTokenizer:
 
 
 class Stage3MaskingTest(unittest.TestCase):
+    def test_requires_nonempty_response_for_every_trace(self):
+        _validate_training_responses([{"response": "reasoning"}])
+        with self.assertRaisesRegex(RuntimeError, "first_indices=\\[1, 2\\]"):
+            _validate_training_responses(
+                [{"response": "ok"}, {"response": ""}, {"prompt": "missing"}]
+            )
+
     def test_appends_eos_to_response_labels(self):
         row = _mask_prompt(FakeTokenizer(), "prompt", "response", 16)
         self.assertEqual(row["input_ids"], [1, 2, 3, 4, 9])

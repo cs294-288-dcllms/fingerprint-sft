@@ -28,6 +28,21 @@ def _latest_checkpoint(output_dir: Path) -> str | None:
     return get_last_checkpoint(str(output_dir))
 
 
+def _validate_training_responses(rows: list[dict]) -> None:
+    """Reject trace sets containing missing or empty student targets."""
+    invalid = [
+        index
+        for index, row in enumerate(rows)
+        if not isinstance(row.get("response"), str)
+        or not row["response"].strip()
+    ]
+    if invalid:
+        raise RuntimeError(
+            f"{len(invalid)} trace rows have missing or empty responses; "
+            f"first_indices={invalid[:10]}"
+        )
+
+
 def _mask_prompt(tokenizer, prompt: str, response: str, max_length: int) -> dict[str, list[int]]:
     """Build input/label ids with prompt tokens masked from loss.
 
@@ -114,6 +129,7 @@ def run_stage3(cfg: FinetuneConfig) -> Path:
     rows = read_jsonl_rows(cfg.traces_jsonl)
     if not rows:
         raise RuntimeError("Trace file is empty")
+    _validate_training_responses(rows)
 
     tokenizer = load_tokenizer(cfg.student, padding_side="left")
     model = load_causal_lm(cfg.student)
@@ -135,9 +151,7 @@ def run_stage3(cfg: FinetuneConfig) -> Path:
     builder = PromptBuilder(system_prompt=OASST1_SYSTEM_PROMPT if add_system_for_messages else None)
     wrapped_rows = []
     for row in rows:
-        response = row.get("response")
-        if not response:
-            continue
+        response = row["response"]
         prompt_text = _prompt_from_row(builder, tokenizer, row, add_system=add_system_for_messages)
         wrapped_rows.append(_mask_prompt(tokenizer, prompt_text, response, cfg.max_seq_length))
     train_dataset = Dataset.from_list(wrapped_rows)
