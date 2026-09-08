@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from config import GenerationConfig, ModelSpec
+from hashing import HashConfig
 from data.science import ScienceProvider
 from stages.stage1_generate import (
     _append_checkpoint_rows,
@@ -82,12 +83,24 @@ class Stage1CheckpointTest(unittest.TestCase):
             repetition_penalty=1.0,
         )
 
-        metadata = _build_metadata_payload(cfg, 9_000)
+        metadata = _build_metadata_payload(
+            cfg,
+            9_000,
+            hash_cfg=HashConfig(seed=123, gamma=0.5),
+            trace_sha256="a" * 64,
+        )
 
         self.assertEqual(metadata["seed"], 43)
         self.assertEqual(metadata["temperature"], 0.7)
         self.assertEqual(metadata["top_p"], 0.95)
         self.assertEqual(metadata["repetition_penalty"], 1.0)
+        self.assertEqual(metadata["teacher_model"], "teacher")
+        self.assertEqual(metadata["teacher_dtype"], "bfloat16")
+        self.assertEqual(metadata["proxy_model"], "proxy")
+        self.assertEqual(metadata["proxy_dtype"], "bfloat16")
+        self.assertEqual(metadata["hash_seed"], 123)
+        self.assertEqual(metadata["hash_gamma"], 0.5)
+        self.assertEqual(metadata["trace_sha256"], "a" * 64)
 
 
 class ScienceTeacherEvalTest(unittest.TestCase):

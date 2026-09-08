@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import timedelta
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -138,13 +139,20 @@ def _validate_merged_rows(rows: List[dict], total_examples: int) -> List[dict]:
 
 
 def _build_metadata_payload(
-    cfg: GenerationConfig, num_examples: int
+    cfg: GenerationConfig,
+    num_examples: int,
+    hash_cfg: HashConfig | None = None,
+    trace_sha256: str | None = None,
 ) -> dict[str, object]:
     """Build reproducibility metadata for a completed trace set."""
-    return {
+    payload: dict[str, object] = {
         "dataset": cfg.dataset,
         "split": cfg.split,
         "method": cfg.method,
+        "teacher_model": cfg.teacher.name,
+        "teacher_dtype": cfg.teacher.dtype,
+        "proxy_model": cfg.proxy.name,
+        "proxy_dtype": cfg.proxy.dtype,
         "teacher_adapter": (
             str(cfg.teacher_adapter) if cfg.teacher_adapter is not None else None
         ),
@@ -157,6 +165,22 @@ def _build_metadata_payload(
         "top_p": cfg.top_p,
         "repetition_penalty": cfg.repetition_penalty,
     }
+    if hash_cfg is not None:
+        payload["hash_seed"] = hash_cfg.seed
+        payload["hash_gamma"] = hash_cfg.gamma
+    if trace_sha256 is not None:
+        payload["trace_file"] = str(cfg.output_jsonl.resolve())
+        payload["trace_sha256"] = trace_sha256
+    return payload
+
+
+def _sha256_file(path: Path) -> str:
+    """Return the SHA-256 digest of a file without loading it into memory."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _append_checkpoint_rows(path: Path, rows: List[dict]) -> None:
@@ -440,7 +464,15 @@ def run_stage1(cfg: GenerationConfig, hash_cfg: HashConfig) -> Path:
                 json.dump(payload, handle, ensure_ascii=False)
                 handle.write("\n")
 
-        write_json(cfg.metadata_path, _build_metadata_payload(cfg, len(merged)))
+        write_json(
+            cfg.metadata_path,
+            _build_metadata_payload(
+                cfg,
+                len(merged),
+                hash_cfg=hash_cfg,
+                trace_sha256=_sha256_file(cfg.output_jsonl),
+            ),
+        )
 
         for shard in tmp_dir.glob("rank_*.jsonl"):
             shard.unlink()
