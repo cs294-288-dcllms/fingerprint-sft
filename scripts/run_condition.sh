@@ -36,10 +36,10 @@ esac
 
 cd "${REPO_ROOT}"
 stage1_batches=("${STAGE1_BATCH}")
-fallback_batch="${STAGE1_BATCH}"
-while (( fallback_batch > 2 )); do
-  fallback_batch=$(( (fallback_batch + 1) / 2 ))
-  stage1_batches+=("${fallback_batch}")
+for fallback_batch in 12 8 4 2; do
+  if (( fallback_batch < STAGE1_BATCH )); then
+    stage1_batches+=("${fallback_batch}")
+  fi
 done
 
 pipeline_complete=0
