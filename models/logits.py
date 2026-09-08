@@ -110,7 +110,7 @@ class CachedProxyModel:
         self.past_key_values = None
         self.cached_length = 0
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def __call__(self, input_ids: torch.LongTensor) -> torch.FloatTensor:
         """Forward pass with caching to avoid recomputing prefix states.
 

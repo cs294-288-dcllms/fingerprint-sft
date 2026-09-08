@@ -403,7 +403,7 @@ def run_stage1(cfg: GenerationConfig, hash_cfg: HashConfig) -> Path:
             gen_kwargs.update(temperature=cfg.temperature, top_p=cfg.top_p)
         if hasattr(logits_processor, "reset"):
             logits_processor.reset()
-        with torch.no_grad():
+        with torch.inference_mode():
             outputs = teacher_model.generate(**gen_kwargs)
 
         prompt_window = input_ids.shape[-1]
