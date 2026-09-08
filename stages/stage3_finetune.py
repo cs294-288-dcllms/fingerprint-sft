@@ -68,6 +68,11 @@ def _mask_prompt(tokenizer, prompt: str, response: str, max_length: int) -> dict
     return {"input_ids": input_ids, "labels": labels}
 
 
+def _record_sequence_length(features: dict[str, list[int]]) -> dict[str, object]:
+    """Add the explicit token length used by the grouped training sampler."""
+    return {**features, "length": len(features["input_ids"])}
+
+
 def _pad_batch(features: list[dict], tokenizer, max_length: int) -> dict:
     """Pad a batch of training features to a uniform length.
 
@@ -153,7 +158,11 @@ def run_stage3(cfg: FinetuneConfig) -> Path:
     for row in rows:
         response = row["response"]
         prompt_text = _prompt_from_row(builder, tokenizer, row, add_system=add_system_for_messages)
-        wrapped_rows.append(_mask_prompt(tokenizer, prompt_text, response, cfg.max_seq_length))
+        wrapped_rows.append(
+            _record_sequence_length(
+                _mask_prompt(tokenizer, prompt_text, response, cfg.max_seq_length)
+            )
+        )
     train_dataset = Dataset.from_list(wrapped_rows)
 
     lora = None
@@ -183,6 +192,8 @@ def run_stage3(cfg: FinetuneConfig) -> Path:
         report_to=[],
         remove_unused_columns=False,
         packing=False,
+        train_sampling_strategy="group_by_length",
+        length_column_name="length",
         gradient_checkpointing=cfg.gradient_checkpointing,
         gradient_checkpointing_kwargs=(
             {"use_reentrant": False} if cfg.gradient_checkpointing else None
