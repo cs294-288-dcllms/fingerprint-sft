@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from stages.stage4_watermark_eval import (
+    _aligned_offsets,
     _append_stage4_checkpoint,
     _effective_batch_size,
     _load_stage4_checkpoint,
@@ -11,6 +12,19 @@ from stages.stage4_watermark_eval import (
 
 
 class Stage4BatchGuardTest(unittest.TestCase):
+    def test_left_padding_preserves_actual_token_positions(self) -> None:
+        offsets = [(0, 0), (0, 0), (0, 1), (1, 3), (3, 6)]
+        attention_mask = [0, 0, 1, 1, 1]
+
+        self.assertEqual(
+            _aligned_offsets(offsets, attention_mask),
+            {1: 2, 3: 3, 6: 4},
+        )
+
+    def test_alignment_rejects_mismatched_lengths(self) -> None:
+        with self.assertRaisesRegex(ValueError, "lengths differ"):
+            _aligned_offsets([(0, 1)], [1, 1])
+
     def test_caps_qwen35_science_batch(self) -> None:
         self.assertEqual(
             _effective_batch_size(12, "science", "Qwen/Qwen3.5-4B"),

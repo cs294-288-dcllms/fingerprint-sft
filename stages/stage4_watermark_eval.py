@@ -122,18 +122,22 @@ def _build_student_shared_mask(student_tokenizer, shared_tokens: set[str]) -> to
     return mask
 
 
-def _aligned_offsets(offsets: Sequence[Tuple[int, int]], limit: int) -> Dict[int, int]:
-    """Build a lookup from end-offset -> student token index for aligned positions.
+def _aligned_offsets(
+    offsets: Sequence[Tuple[int, int]],
+    attention_mask: Sequence[int],
+) -> Dict[int, int]:
+    """Map token end offsets to actual positions in a padded batch row.
 
-    Args:
-        offsets: Sequence of (start, end) offsets from tokenizer output.
-        limit: Maximum number of offsets to consider.
-
-    Returns:
-        Mapping from end-offset integer to token index.
+    Left padding means valid token positions are not the first ``sum(mask)``
+    entries. Preserve each attended token's original tensor index so logits
+    and character offsets remain aligned.
     """
+    if len(offsets) != len(attention_mask):
+        raise ValueError("offset and attention-mask lengths differ")
     result: Dict[int, int] = {}
-    for idx, (_, end) in enumerate(offsets[:limit]):
+    for idx, ((start, end), attended) in enumerate(zip(offsets, attention_mask)):
+        if not attended or int(end) <= int(start):
+            continue
         result[int(end)] = idx
     return result
 
@@ -270,7 +274,6 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
         offsets_batch = student_inputs["offset_mapping"]
         with torch.no_grad():
             logits = student_model(input_ids=input_ids, attention_mask=attention_mask).logits
-        seq_lengths = attention_mask.sum(dim=1).to(torch.long)
 
         batch_bigrams: List[Tuple[int, int]] = []
         batch_student_positions: List[int] = []
@@ -290,9 +293,11 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
             ]
             offsets_list = [
                 (int(start), int(end))
-                for start, end in offsets_batch[idx][: seq_lengths[idx]]
+                for start, end in offsets_batch[idx]
             ]
-            alignment = _aligned_offsets(offsets_list, len(offsets_list))
+            alignment = _aligned_offsets(
+                offsets_list, attention_mask[idx].tolist()
+            )
             response_start = prompt_lengths[idx]
             for t_idx, (_, end) in enumerate(teacher_offsets):
                 if end <= response_start:
@@ -302,7 +307,7 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
                 if t_idx < 1:
                     continue
                 s_idx = alignment[end]
-                if s_idx < 0 or s_idx >= seq_lengths[idx]:
+                if s_idx < 0 or s_idx >= input_ids.shape[1]:
                     continue
                 bigram = (int(teacher_ids[t_idx - 1]), int(teacher_ids[t_idx]))
                 batch_bigrams.append(bigram)
