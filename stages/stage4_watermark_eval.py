@@ -229,6 +229,29 @@ def _build_student_shared_mask(student_tokenizer, shared_tokens: set[str]) -> to
     return mask
 
 
+def _has_identity_token_mapping(
+    source_to_target: torch.Tensor,
+    shared_mask: torch.Tensor,
+    teacher_vocab: int,
+    student_vocab: int,
+) -> bool:
+    """Return whether teacher and student token ids are exactly interchangeable."""
+    if teacher_vocab != student_vocab:
+        return False
+    if source_to_target.numel() < teacher_vocab:
+        return False
+    if shared_mask.numel() < student_vocab or not bool(
+        shared_mask[:student_vocab].all()
+    ):
+        return False
+    expected = torch.arange(
+        teacher_vocab,
+        device=source_to_target.device,
+        dtype=source_to_target.dtype,
+    )
+    return bool(torch.equal(source_to_target[:teacher_vocab], expected))
+
+
 def _aligned_offsets(
     offsets: Sequence[Tuple[int, int]],
     attention_mask: Sequence[int],
@@ -302,8 +325,14 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
     shared_mask = _build_student_shared_mask(student_tokenizer, overlap.shared_token_strings)
     student_vocab = len(student_tokenizer)
     map_tensor = overlap.source_to_target
-    map_dev = map_tensor.to(accelerator.device)
     teacher_vocab = len(teacher_tokenizer)
+    identity_token_mapping = _has_identity_token_mapping(
+        map_tensor,
+        shared_mask,
+        teacher_vocab,
+        student_vocab,
+    )
+    map_dev = map_tensor.to(accelerator.device)
     if map_dev.shape[0] < teacher_vocab:
         padded = torch.full((teacher_vocab,), -1, device=accelerator.device, dtype=torch.long)
         padded[: map_dev.shape[0]] = map_dev
@@ -452,25 +481,51 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
             sample_chunk = batch_sample_indices[offset : offset + mask_chunk]
             pos_chunk = batch_student_positions[offset : offset + mask_chunk]
 
-            teacher_masks = hash_fn.mask_batch(bg_chunk, device=accelerator.device, dtype=torch.bool)
-            teacher_vocab = teacher_masks.shape[1]
-            map_slice = map_indices[:teacher_vocab]
-
-            student_masks = torch.zeros(
-                (teacher_masks.shape[0], student_vocab + 1),
-                device=accelerator.device,
-                dtype=torch.bool,
-            )
-            student_masks.scatter_(
-                1, map_slice.unsqueeze(0).expand_as(teacher_masks), teacher_masks
-            )
-            student_masks = student_masks[:, :student_vocab]
-
             sample_idx_tensor = torch.tensor(sample_chunk, device=accelerator.device, dtype=torch.long)
             token_idx_tensor = torch.tensor(pos_chunk, device=accelerator.device, dtype=torch.long)
             selected_logits = logits[sample_idx_tensor, token_idx_tensor]
 
             probs = F.softmax(selected_logits, dim=-1)
+            if cfg.mode == "closed" and identity_token_mapping:
+                samples = torch.multinomial(probs, num_samples=1).squeeze(-1)
+                shared_flags = shared[samples]
+                hits = hash_fn.membership_batch(
+                    bg_chunk,
+                    samples,
+                    device=accelerator.device,
+                    dtype=torch.float32,
+                )
+                for bigram, is_shared, hit in zip(
+                    bg_chunk,
+                    shared_flags.tolist(),
+                    hits.tolist(),
+                ):
+                    if not is_shared:
+                        continue
+                    batch_values.append((bigram, float(hit)))
+                continue
+
+            teacher_masks = hash_fn.mask_batch(
+                bg_chunk,
+                device=accelerator.device,
+                dtype=torch.bool,
+            )
+            if identity_token_mapping:
+                student_masks = teacher_masks
+            else:
+                teacher_mask_vocab = teacher_masks.shape[1]
+                map_slice = map_indices[:teacher_mask_vocab]
+                student_masks = torch.zeros(
+                    (teacher_masks.shape[0], student_vocab + 1),
+                    device=accelerator.device,
+                    dtype=torch.bool,
+                )
+                student_masks.scatter_(
+                    1,
+                    map_slice.unsqueeze(0).expand_as(teacher_masks),
+                    teacher_masks,
+                )
+                student_masks = student_masks[:, :student_vocab]
 
             if cfg.mode == "open":
                 shared_mass = (probs * shared).sum(dim=-1)

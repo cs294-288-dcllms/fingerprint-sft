@@ -243,3 +243,80 @@ class BigramHash:
                 )
             tensor = torch.tensor(bigram_list, device=device or "cpu", dtype=torch.long)
         return self._sample_mask_vec(tensor, device=device, dtype=dtype or torch.bool)
+
+    def membership_batch(
+        self,
+        bigrams: Iterable[Bigram] | torch.Tensor,
+        token_ids: Iterable[int] | torch.Tensor,
+        *,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> torch.Tensor:
+        """Test one token per bigram without materializing full-vocabulary masks.
+
+        This is exactly equivalent to gathering ``mask_batch(bigrams)`` at the
+        corresponding token ids, but uses O(batch) rather than
+        O(batch * vocab_size) memory and arithmetic.
+        """
+        if isinstance(bigrams, torch.Tensor):
+            if bigrams.ndim != 2 or bigrams.shape[1] != 2:
+                raise ValueError("bigrams tensor must have shape [batch, 2]")
+            target_device = device or bigrams.device
+            bigram_tensor = bigrams.to(device=target_device, dtype=torch.long)
+        else:
+            bigram_list = list(bigrams)
+            target_device = device or torch.device("cpu")
+            bigram_tensor = torch.tensor(
+                bigram_list,
+                device=target_device,
+                dtype=torch.long,
+            )
+
+        if isinstance(token_ids, torch.Tensor):
+            token_tensor = token_ids.to(
+                device=target_device,
+                dtype=torch.long,
+            ).reshape(-1)
+        else:
+            token_tensor = torch.tensor(
+                list(token_ids),
+                device=target_device,
+                dtype=torch.long,
+            )
+
+        if bigram_tensor.shape[0] != token_tensor.shape[0]:
+            raise ValueError("bigrams and token_ids must have the same length")
+        if token_tensor.numel() == 0:
+            return torch.empty(
+                0,
+                device=target_device,
+                dtype=dtype or torch.bool,
+            )
+        if bool(((token_tensor < 0) | (token_tensor >= self.vocab_size)).any()):
+            raise ValueError("token_ids must lie within the hash vocabulary")
+
+        _, mul2, mul3, mask63, seed, excluded = self._get_device_tensors(
+            target_device
+        )
+        mul1 = torch.tensor(
+            6364136223846793005,
+            device=target_device,
+            dtype=torch.int64,
+        )
+        x = token_tensor * mul1
+        x = x ^ (bigram_tensor[:, 0] * mul2)
+        x = x ^ (bigram_tensor[:, 1] * mul3) ^ seed
+        x = (x ^ (x >> 30)) * mul2
+        x = (x ^ (x >> 27)) * mul3
+        x = x ^ (x >> 31)
+        x = x & mask63
+        if self.config.gamma == 0.5:
+            membership = x < ((1 << 62) - 256)
+        else:
+            draws = x.to(torch.float64) / float(2**63)
+            membership = draws < float(self.config.gamma)
+        if excluded.numel() > 0:
+            membership &= ~torch.isin(token_tensor, excluded)
+        if dtype:
+            membership = membership.to(dtype)
+        return membership

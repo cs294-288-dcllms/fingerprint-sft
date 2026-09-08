@@ -4,6 +4,9 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+import torch
+
+from hashing import BigramHash, HashConfig
 from stages.stage4_watermark_eval import (
     _aggregate_stage4_shards,
     _aligned_offsets,
@@ -11,6 +14,7 @@ from stages.stage4_watermark_eval import (
     _build_metric_provenance,
     _build_position_batches,
     _effective_batch_size,
+    _has_identity_token_mapping,
     _load_stage4_checkpoint,
     _validate_stage4_completion,
 )
@@ -118,6 +122,47 @@ class Stage4BatchGuardTest(unittest.TestCase):
             _effective_batch_size(0, "science", "Qwen/Qwen3.5-4B"),
             1,
         )
+
+    def test_detects_exact_identity_token_mapping(self) -> None:
+        mapping = torch.arange(5)
+        shared = torch.ones(5, dtype=torch.bool)
+
+        self.assertTrue(_has_identity_token_mapping(mapping, shared, 5, 5))
+        self.assertFalse(
+            _has_identity_token_mapping(
+                torch.tensor([0, 1, 3, 2, 4]),
+                shared,
+                5,
+                5,
+            )
+        )
+        self.assertFalse(
+            _has_identity_token_mapping(
+                mapping,
+                torch.tensor([True, True, False, True, True]),
+                5,
+                5,
+            )
+        )
+
+    def test_sparse_hash_membership_matches_dense_gather(self) -> None:
+        bigrams = torch.tensor(
+            [[1, 2], [7, 11], [13, 17], [19, 23], [29, 31]],
+            dtype=torch.long,
+        )
+        token_ids = torch.tensor([0, 3, 17, 128, 256], dtype=torch.long)
+        for gamma in (0.5, 0.37):
+            hash_fn = BigramHash(
+                HashConfig(seed=294288, gamma=gamma),
+                vocab_size=257,
+                excluded_token_ids=[0, 256],
+            )
+            dense = hash_fn.mask_batch(bigrams)
+            expected = dense.gather(1, token_ids.unsqueeze(1)).squeeze(1)
+
+            actual = hash_fn.membership_batch(bigrams, token_ids)
+
+            self.assertTrue(torch.equal(actual, expected))
 
 
     def test_checkpoint_resumes_and_repairs_partial_tail(self) -> None:
