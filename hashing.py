@@ -88,6 +88,39 @@ class BigramHash:
             sorted({int(i) for i in (excluded_token_ids or [])}),
             dtype=torch.long,
         )
+        self._device_cache: dict[str, tuple[torch.Tensor, ...]] = {}
+
+    def _get_device_tensors(
+        self,
+        device: torch.device,
+    ) -> tuple[torch.Tensor, ...]:
+        """Return immutable hash tensors cached on the requested device."""
+        key = str(device)
+        cached = self._device_cache.get(key)
+        if cached is not None:
+            return cached
+        mul1 = torch.tensor(6364136223846793005, device=device, dtype=torch.int64)
+        mul2 = torch.tensor(1442695040888963407, device=device, dtype=torch.int64)
+        mul3 = torch.tensor(22695477, device=device, dtype=torch.int64)
+        token_base = torch.arange(
+            self.vocab_size,
+            device=device,
+            dtype=torch.int64,
+        ) * mul1
+        cached = (
+            token_base,
+            mul2,
+            mul3,
+            torch.tensor((1 << 63) - 1, device=device, dtype=torch.int64),
+            torch.tensor(
+                int(self.config.seed) & ((1 << 63) - 1),
+                device=device,
+                dtype=torch.int64,
+            ),
+            self.excluded.to(device),
+        )
+        self._device_cache[key] = cached
+        return cached
 
     def _derive_seed(self, bigram: Bigram) -> int:
         """Derive a deterministic seed from a bigram.
@@ -126,19 +159,10 @@ class BigramHash:
             Boolean or dtype-cast mask of shape [B, vocab_size].
         """
         dev = device or torch.device("cpu")
-        bigrams = bigrams.to(torch.long)
-        vocab_ids = torch.arange(self.vocab_size, device=dev, dtype=torch.long)
-        # Constants for hashing (splitmix64-like) using int64 with wraparound.
-        mask63 = torch.tensor((1 << 63) - 1, device=dev, dtype=torch.int64)
-        # 64-bit friendly mixing constants (fit in signed int64).
-        mul1 = torch.tensor(6364136223846793005, device=dev, dtype=torch.int64)
-        mul2 = torch.tensor(1442695040888963407, device=dev, dtype=torch.int64)
-        mul3 = torch.tensor(22695477, device=dev, dtype=torch.int64)
-        safe_seed = int(self.config.seed) & ((1 << 63) - 1)
-        seed = torch.tensor(safe_seed, device=dev, dtype=torch.int64)
-        token_ids = vocab_ids.to(torch.int64)
+        bigrams = bigrams.to(device=dev, dtype=torch.long)
+        token_base, mul2, mul3, mask63, seed, excluded = self._get_device_tensors(dev)
         # Shape: [B, vocab]
-        x = (token_ids.unsqueeze(0) * mul1) ^ (bigrams[:, :1].to(torch.int64) * mul2)
+        x = token_base.unsqueeze(0) ^ (bigrams[:, :1].to(torch.int64) * mul2)
         x = (x ^ (bigrams[:, 1:].to(torch.int64) * mul3) ^ seed)
         x = (x ^ (x >> 30)) * mul2
         x = (x ^ (x >> 27)) * mul3
@@ -152,8 +176,7 @@ class BigramHash:
         else:
             draws = x.to(torch.float64) / float(2**63)
             mask = draws < float(self.config.gamma)
-        if self.excluded.numel() > 0:
-            excluded = self.excluded.to(dev)
+        if excluded.numel() > 0:
             mask.index_fill_(1, excluded, False)
         if dtype:
             mask = mask.to(dtype)
