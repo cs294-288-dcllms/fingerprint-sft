@@ -7,9 +7,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from config import GenerationConfig, ModelSpec
 from data.science import ScienceProvider
 from stages.stage1_generate import (
     _append_checkpoint_rows,
+    _build_metadata_payload,
     _load_checkpoint_rows,
     _validate_merged_rows,
 )
@@ -63,6 +65,29 @@ class Stage1CheckpointTest(unittest.TestCase):
             _validate_merged_rows([rows[1]], 2)
         with self.assertRaisesRegex(RuntimeError, r"duplicate_indices=\[0\]"):
             _validate_merged_rows([rows[1], rows[1]], 2)
+
+    def test_metadata_records_generation_seed_and_sampling_settings(self) -> None:
+        cfg = GenerationConfig(
+            dataset="science",
+            split="train",
+            max_examples=9_000,
+            teacher=ModelSpec(name="teacher"),
+            proxy=ModelSpec(name="proxy"),
+            method="ads",
+            lam=16,
+            seed=43,
+            max_new_tokens=3_840,
+            temperature=0.7,
+            top_p=0.95,
+            repetition_penalty=1.0,
+        )
+
+        metadata = _build_metadata_payload(cfg, 9_000)
+
+        self.assertEqual(metadata["seed"], 43)
+        self.assertEqual(metadata["temperature"], 0.7)
+        self.assertEqual(metadata["top_p"], 0.95)
+        self.assertEqual(metadata["repetition_penalty"], 1.0)
 
 
 class ScienceTeacherEvalTest(unittest.TestCase):

@@ -137,6 +137,28 @@ def _validate_merged_rows(rows: List[dict], total_examples: int) -> List[dict]:
     return sorted(rows, key=lambda row: row["index"])
 
 
+def _build_metadata_payload(
+    cfg: GenerationConfig, num_examples: int
+) -> dict[str, object]:
+    """Build reproducibility metadata for a completed trace set."""
+    return {
+        "dataset": cfg.dataset,
+        "split": cfg.split,
+        "method": cfg.method,
+        "teacher_adapter": (
+            str(cfg.teacher_adapter) if cfg.teacher_adapter is not None else None
+        ),
+        "delta": cfg.delta,
+        "lambda": cfg.lam,
+        "num_examples": num_examples,
+        "seed": cfg.seed,
+        "max_new_tokens": cfg.max_new_tokens,
+        "temperature": cfg.temperature,
+        "top_p": cfg.top_p,
+        "repetition_penalty": cfg.repetition_penalty,
+    }
+
+
 def _append_checkpoint_rows(path: Path, rows: List[dict]) -> None:
     """Durably append one completed generation batch to a rank checkpoint."""
     if not rows:
@@ -418,19 +440,7 @@ def run_stage1(cfg: GenerationConfig, hash_cfg: HashConfig) -> Path:
                 json.dump(payload, handle, ensure_ascii=False)
                 handle.write("\n")
 
-        meta_payload = {
-            "dataset": cfg.dataset,
-            "split": cfg.split,
-            "method": cfg.method,
-            "teacher_adapter": (
-                str(cfg.teacher_adapter) if cfg.teacher_adapter is not None else None
-            ),
-            "delta": cfg.delta,
-            "lambda": cfg.lam,
-            "num_examples": len(merged),
-            "max_new_tokens": cfg.max_new_tokens,
-        }
-        write_json(cfg.metadata_path, meta_payload)
+        write_json(cfg.metadata_path, _build_metadata_payload(cfg, len(merged)))
 
         for shard in tmp_dir.glob("rank_*.jsonl"):
             shard.unlink()
