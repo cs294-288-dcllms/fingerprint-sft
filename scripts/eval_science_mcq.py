@@ -152,6 +152,42 @@ def _load_checkpoint_rows(path: Path) -> list[dict[str, Any]]:
     return checkpoint_rows
 
 
+def _validate_complete_predictions(
+    rows: list[dict[str, Any]], expected: int
+) -> list[dict[str, Any]]:
+    """Require exactly one prediction for every expected dataset index."""
+    seen: set[int] = set()
+    duplicates: set[int] = set()
+    non_integer_count = 0
+    for row in rows:
+        index = row.get("index")
+        if not isinstance(index, int):
+            non_integer_count += 1
+            continue
+        if index in seen:
+            duplicates.add(index)
+        seen.add(index)
+    expected_indices = set(range(expected))
+    missing = sorted(expected_indices - seen)
+    unexpected = sorted(seen - expected_indices)
+    if (
+        len(rows) != expected
+        or non_integer_count
+        or duplicates
+        or missing
+        or unexpected
+    ):
+        raise RuntimeError(
+            "Science evaluation merge is incomplete or invalid: "
+            f"expected_rows={expected}, actual_rows={len(rows)}, "
+            f"non_integer_indices={non_integer_count}, "
+            f"missing_indices={missing[:10]}, "
+            f"unexpected_indices={unexpected[:10]}, "
+            f"duplicate_indices={sorted(duplicates)[:10]}"
+        )
+    return sorted(rows, key=lambda row: row["index"])
+
+
 def main() -> None:
     args = parse_args()
     try:
@@ -244,7 +280,7 @@ def main() -> None:
                 shard_path = args.output.with_suffix(args.output.suffix + f".rank{shard_rank}.tmp")
                 with shard_path.open("r", encoding="utf-8") as handle:
                     merged.extend(json.loads(line) for line in handle if line.strip())
-            merged.sort(key=lambda row: row["index"])
+            merged = _validate_complete_predictions(merged, len(rows))
             with args.output.open("w", encoding="utf-8") as handle:
                 for row in merged:
                     json.dump(row, handle, ensure_ascii=False)
@@ -255,6 +291,7 @@ def main() -> None:
                 )
         torch.distributed.barrier()
     else:
+        _validate_complete_predictions(_load_checkpoint_rows(shard_output), len(rows))
         shard_output.replace(args.output)
 
     if rank == 0:
