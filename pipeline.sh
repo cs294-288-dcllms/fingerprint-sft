@@ -96,6 +96,24 @@ STUDENT_DTYPE="${STUDENT_DTYPE:-bfloat16}"
 STUDENT_PAD="${STUDENT_PAD:-}"
 STUDENT_TAG_OVERRIDE="${STUDENT_TAG_OVERRIDE:-}"
 STUDENT_INIT_ADAPTER="${STUDENT_INIT_ADAPTER:-}"
+REQUIRE_QWEN35_FAST_PATH="${REQUIRE_QWEN35_FAST_PATH:-auto}"
+
+qwen35_requested=0
+for model_name in "$TEACHER_MODEL" "$PROXY_MODEL" "$STUDENT_MODEL"; do
+    model_name="${model_name,,}"
+    if [[ "$model_name" == *qwen3.5* || "$model_name" == *qwen3_5* ]]; then
+        qwen35_requested=1
+        break
+    fi
+done
+if [[ "$REQUIRE_QWEN35_FAST_PATH" == "auto" ]]; then
+    REQUIRE_QWEN35_FAST_PATH="$qwen35_requested"
+fi
+if [[ "$REQUIRE_QWEN35_FAST_PATH" == "1" ]]; then
+    "$PYTHON_BIN" -c \
+        'from transformers.models.qwen3_5 import modeling_qwen3_5 as q; assert q.is_fast_path_available, "Qwen3.5 fast path is unavailable"'
+    echo "Qwen3.5 fast path verified."
+fi
 
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-512}"
 TEMPERATURE="${TEMPERATURE:-0.7}"
