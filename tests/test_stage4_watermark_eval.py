@@ -6,6 +6,7 @@ from pathlib import Path
 from stages.stage4_watermark_eval import (
     _aligned_offsets,
     _append_stage4_checkpoint,
+    _build_position_batches,
     _effective_batch_size,
     _load_stage4_checkpoint,
     _validate_stage4_completion,
@@ -29,7 +30,40 @@ class Stage4BatchGuardTest(unittest.TestCase):
     def test_caps_qwen35_science_batch(self) -> None:
         self.assertEqual(
             _effective_batch_size(12, "science", "Qwen/Qwen3.5-4B"),
-            4,
+            12,
+        )
+
+    def test_qwen35_science_batches_preserve_order_and_token_budget(self) -> None:
+        positions = list(range(10))
+        token_lengths = [4096] * 5 + [1000] * 5
+
+        batches = _build_position_batches(
+            positions,
+            token_lengths,
+            12,
+            "science",
+            "Qwen/Qwen3.5-4B",
+        )
+
+        self.assertEqual(
+            batches,
+            [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9]],
+        )
+        self.assertEqual(
+            [position for batch in batches for position in batch],
+            positions,
+        )
+
+    def test_other_workloads_use_fixed_batches(self) -> None:
+        self.assertEqual(
+            _build_position_batches(
+                list(range(7)),
+                [1000] * 7,
+                3,
+                "gsm8k",
+                "Qwen/Qwen3.5-4B",
+            ),
+            [[0, 1, 2], [3, 4, 5], [6]],
         )
 
     def test_preserves_other_workloads(self) -> None:

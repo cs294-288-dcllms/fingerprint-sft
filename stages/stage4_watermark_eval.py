@@ -23,17 +23,60 @@ from models.prompts import OASST1_SYSTEM_PROMPT, PromptBuilder
 from utils.tokenization import compute_overlap, load_tokenizer
 
 EvalEntry = Tuple[Tuple[int, int], float]
-QWEN35_SCIENCE_BATCH_CAP = 4
+QWEN35_SCIENCE_BATCH_CAP = 12
+QWEN35_SCIENCE_TOKEN_BUDGET = 4 * 4096
 
 
 def _effective_batch_size(
     requested: int, dataset: str, student_model: str
 ) -> int:
-    """Cap long-context Qwen3.5 science evaluation to fit 48 GB GPUs."""
+    """Cap long-context Qwen3.5 science evaluation to a safe maximum."""
     batch_size = max(1, requested)
     if dataset.lower() == "science" and "qwen3.5" in student_model.lower():
         batch_size = min(batch_size, QWEN35_SCIENCE_BATCH_CAP)
     return batch_size
+
+
+def _build_position_batches(
+    positions: Sequence[int],
+    token_lengths: Sequence[int],
+    requested_batch_size: int,
+    dataset: str,
+    student_model: str,
+) -> List[List[int]]:
+    """Build order-preserving batches with a padding-aware token budget."""
+    batch_size = _effective_batch_size(
+        requested_batch_size,
+        dataset,
+        student_model,
+    )
+    if dataset.lower() != "science" or "qwen3.5" not in student_model.lower():
+        return [
+            list(positions[start : start + batch_size])
+            for start in range(0, len(positions), batch_size)
+        ]
+
+    batches: List[List[int]] = []
+    current: List[int] = []
+    current_max_length = 0
+    for position in positions:
+        if position < 0 or position >= len(token_lengths):
+            raise ValueError(f"position {position} has no token length")
+        token_length = max(1, int(token_lengths[position]))
+        candidate_size = len(current) + 1
+        candidate_max_length = max(current_max_length, token_length)
+        if current and (
+            candidate_size > batch_size
+            or candidate_size * candidate_max_length > QWEN35_SCIENCE_TOKEN_BUDGET
+        ):
+            batches.append(current)
+            current = []
+            current_max_length = 0
+        current.append(position)
+        current_max_length = max(current_max_length, token_length)
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _load_stage4_checkpoint(path: Path) -> tuple[set[int], List[EvalEntry]]:
@@ -234,6 +277,27 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
     student_model.eval()
 
     local_rows = traces[accelerator.process_index :: accelerator.num_processes]
+    local_texts: List[str] = []
+    local_prompt_lengths: List[int] = []
+    local_token_lengths: List[int] = []
+    for row in local_rows:
+        prompt_text = _prompt_from_row(
+            builder,
+            student_tokenizer,
+            row,
+            add_system=add_system_for_messages,
+        )
+        text = prompt_text + (row.get("response") or "")
+        local_texts.append(text)
+        local_prompt_lengths.append(len(prompt_text))
+        local_token_lengths.append(
+            len(
+                student_tokenizer(
+                    text,
+                    add_special_tokens=False,
+                )["input_ids"]
+            )
+        )
     tmp_dir = cfg.output_path.parent / f"_tmp_stage4_{cfg.output_path.stem}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     rank_path = tmp_dir / f"rank_{accelerator.process_index:03d}.jsonl"
@@ -258,27 +322,26 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
         for position in range(len(local_rows))
         if position not in completed_positions
     ]
-    iterator = range(0, len(pending_positions), batch_size)
+    position_batches = _build_position_batches(
+        pending_positions,
+        local_token_lengths,
+        batch_size,
+        cfg.dataset,
+        cfg.student.name,
+    )
+    iterator = position_batches
     if accelerator.is_local_main_process:
         iterator = tqdm(
             iterator,
-            total=(len(pending_positions) + batch_size - 1) // batch_size,
+            total=len(position_batches),
             desc="Stage 4: watermark eval",
         )
 
-    for pending_start in iterator:
-        positions = pending_positions[pending_start : pending_start + batch_size]
+    for positions in iterator:
         batch = [local_rows[position] for position in positions]
         batch_values: List[EvalEntry] = []
-        prompts: List[str] = []
-        texts: List[str] = []
-        prompt_lengths: List[int] = []
-        for row in batch:
-            prompt_text = _prompt_from_row(builder, student_tokenizer, row, add_system=add_system_for_messages)
-            response_text = row.get("response") or ""
-            prompts.append(prompt_text)
-            texts.append(prompt_text + response_text)
-            prompt_lengths.append(len(prompt_text))
+        texts = [local_texts[position] for position in positions]
+        prompt_lengths = [local_prompt_lengths[position] for position in positions]
         # Tokenize with student tokenizer to get offsets/token ids.
         student_inputs = student_tokenizer(
             texts,
