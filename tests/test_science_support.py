@@ -8,7 +8,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from data.science import ScienceProvider
-from stages.stage1_generate import _append_checkpoint_rows, _load_checkpoint_rows
+from stages.stage1_generate import (
+    _append_checkpoint_rows,
+    _load_checkpoint_rows,
+    _validate_merged_rows,
+)
 from stages.stage2_teacher_eval import _is_science_correct
 
 
@@ -44,6 +48,21 @@ class Stage1CheckpointTest(unittest.TestCase):
             self.assertEqual(_load_checkpoint_rows(path), [first])
             _append_checkpoint_rows(path, [second])
             self.assertEqual(_load_checkpoint_rows(path), [first, second])
+
+    def test_merge_requires_exact_unique_index_coverage(self) -> None:
+        rows = [
+            {"index": 1, "response": "one"},
+            {"index": 0, "response": "zero"},
+        ]
+        self.assertEqual(
+            [row["index"] for row in _validate_merged_rows(rows, 2)],
+            [0, 1],
+        )
+
+        with self.assertRaisesRegex(RuntimeError, r"missing_indices=\[1\]"):
+            _validate_merged_rows([rows[1]], 2)
+        with self.assertRaisesRegex(RuntimeError, r"duplicate_indices=\[0\]"):
+            _validate_merged_rows([rows[1], rows[1]], 2)
 
 
 class ScienceTeacherEvalTest(unittest.TestCase):

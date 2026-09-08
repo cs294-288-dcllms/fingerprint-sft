@@ -101,6 +101,42 @@ def _load_checkpoint_rows(path: Path) -> List[dict]:
     return rows
 
 
+def _validate_merged_rows(rows: List[dict], total_examples: int) -> List[dict]:
+    """Require exactly one valid trace for every requested dataset index."""
+    seen: set[int] = set()
+    duplicates: set[int] = set()
+    non_integer_count = 0
+    for row in rows:
+        index = row.get("index")
+        if not isinstance(index, int):
+            non_integer_count += 1
+            continue
+        if index in seen:
+            duplicates.add(index)
+        seen.add(index)
+
+    expected = set(range(total_examples))
+    missing = sorted(expected - seen)
+    unexpected = sorted(seen - expected)
+    if (
+        len(rows) != total_examples
+        or non_integer_count
+        or missing
+        or unexpected
+        or duplicates
+    ):
+        raise RuntimeError(
+            "Stage 1 merge is incomplete or invalid: "
+            f"expected_rows={total_examples}, actual_rows={len(rows)}, "
+            f"non_integer_indices={non_integer_count}, "
+            f"missing_indices={missing[:10]}, "
+            f"unexpected_indices={unexpected[:10]}, "
+            f"duplicate_indices={sorted(duplicates)[:10]}"
+        )
+
+    return sorted(rows, key=lambda row: row["index"])
+
+
 def _append_checkpoint_rows(path: Path, rows: List[dict]) -> None:
     """Durably append one completed generation batch to a rank checkpoint."""
     if not rows:
@@ -366,8 +402,7 @@ def run_stage1(cfg: GenerationConfig, hash_cfg: HashConfig) -> Path:
             if not shard.exists():
                 continue
             merged.extend(_load_checkpoint_rows(shard))
-        merged = merged[: total_examples]
-        merged.sort(key=lambda row: row["index"])
+        merged = _validate_merged_rows(merged, total_examples)
 
         cfg.output_jsonl.parent.mkdir(parents=True, exist_ok=True)
         with cfg.output_jsonl.open("w", encoding="utf-8") as handle:
