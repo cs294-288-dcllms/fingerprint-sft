@@ -104,6 +104,24 @@ def _append_stage4_checkpoint(
         os.fsync(handle.fileno())
 
 
+def _validate_stage4_completion(
+    completed_positions: set[int],
+    expected_positions: int,
+) -> None:
+    """Require Stage 4 to process every local trace position."""
+    expected = set(range(expected_positions))
+    missing = sorted(expected - completed_positions)
+    unexpected = sorted(completed_positions - expected)
+    if missing or unexpected:
+        raise RuntimeError(
+            "Stage 4 evaluation is incomplete or invalid: "
+            f"expected_positions={expected_positions}, "
+            f"completed_positions={len(completed_positions)}, "
+            f"missing_positions={missing[:10]}, "
+            f"unexpected_positions={unexpected[:10]}"
+        )
+
+
 def _build_student_shared_mask(student_tokenizer, shared_tokens: set[str]) -> torch.BoolTensor:
     """Build a mask over the student vocab for shared token strings.
 
@@ -362,6 +380,11 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
 
         _append_stage4_checkpoint(rank_path, positions, batch_values)
 
+    completed_positions.update(pending_positions)
+    _validate_stage4_completion(
+        completed_positions,
+        expected_positions=len(local_rows),
+    )
     accelerator.wait_for_everyone()
 
     if accelerator.is_main_process:

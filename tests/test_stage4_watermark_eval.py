@@ -8,6 +8,7 @@ from stages.stage4_watermark_eval import (
     _append_stage4_checkpoint,
     _effective_batch_size,
     _load_stage4_checkpoint,
+    _validate_stage4_completion,
 )
 
 
@@ -62,6 +63,13 @@ class Stage4BatchGuardTest(unittest.TestCase):
             self.assertEqual(entries, [((1, 2), 0.6), ((2, 3), 0.7)])
             for line in path.read_text(encoding="utf-8").splitlines():
                 json.loads(line)
+
+    def test_completion_requires_exact_local_positions(self) -> None:
+        _validate_stage4_completion({0, 1}, expected_positions=2)
+        with self.assertRaisesRegex(RuntimeError, r"missing_positions=\[1\]"):
+            _validate_stage4_completion({0}, expected_positions=2)
+        with self.assertRaisesRegex(RuntimeError, r"unexpected_positions=\[2\]"):
+            _validate_stage4_completion({0, 1, 2}, expected_positions=2)
 
 
 if __name__ == "__main__":
