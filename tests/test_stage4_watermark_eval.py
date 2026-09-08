@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from stages.stage4_watermark_eval import (
+    _aggregate_stage4_shards,
     _aligned_offsets,
     _append_stage4_checkpoint,
     _build_position_batches,
@@ -104,6 +105,26 @@ class Stage4BatchGuardTest(unittest.TestCase):
             _validate_stage4_completion({0}, expected_positions=2)
         with self.assertRaisesRegex(RuntimeError, r"unexpected_positions=\[2\]"):
             _validate_stage4_completion({0, 1, 2}, expected_positions=2)
+
+    def test_shard_aggregation_preserves_first_occurrence_semantics(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            first = Path(temporary) / "rank_000.jsonl"
+            second = Path(temporary) / "rank_001.jsonl"
+            _append_stage4_checkpoint(
+                first,
+                [0],
+                [((1, 2), 0.25), ((2, 3), 0.5)],
+            )
+            _append_stage4_checkpoint(
+                second,
+                [0],
+                [((1, 2), 0.9), ((3, 4), 1.0)],
+            )
+
+            count, mean = _aggregate_stage4_shards([first, second])
+
+            self.assertEqual(count, 3)
+            self.assertAlmostEqual(mean, (0.25 + 0.5 + 1.0) / 3)
 
 
 if __name__ == "__main__":

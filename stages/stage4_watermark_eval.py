@@ -165,6 +165,25 @@ def _validate_stage4_completion(
         )
 
 
+def _aggregate_stage4_shards(
+    shard_paths: Sequence[Path],
+) -> tuple[int, float]:
+    """Aggregate first-occurrence bigram values without a global sort."""
+    seen_bigrams: set[Tuple[int, int]] = set()
+    value_sum = 0.0
+    value_count = 0
+    for shard in shard_paths:
+        _, shard_entries = _load_stage4_checkpoint(shard)
+        for bigram, value in shard_entries:
+            if bigram in seen_bigrams:
+                continue
+            seen_bigrams.add(bigram)
+            value_sum += value
+            value_count += 1
+    mean = value_sum / value_count if value_count else 0.0
+    return value_count, mean
+
+
 def _build_student_shared_mask(student_tokenizer, shared_tokens: set[str]) -> torch.BoolTensor:
     """Build a mask over the student vocab for shared token strings.
 
@@ -451,14 +470,13 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
     accelerator.wait_for_everyone()
 
     if accelerator.is_main_process:
-        all_entries: List[Tuple[Tuple[int, int], float]] = []
-        for idx in range(accelerator.num_processes):
-            shard = tmp_dir / f"rank_{idx:03d}.jsonl"
-            if not shard.exists():
-                continue
-            _, shard_entries = _load_stage4_checkpoint(shard)
-            all_entries.extend(shard_entries)
-        if not all_entries:
+        shards = [
+            tmp_dir / f"rank_{idx:03d}.jsonl"
+            for idx in range(accelerator.num_processes)
+            if (tmp_dir / f"rank_{idx:03d}.jsonl").exists()
+        ]
+        num_measurements, mean = _aggregate_stage4_shards(shards)
+        if not num_measurements:
             payload = {
                 "num_measurements": 0,
                 "mean": 0.0,
@@ -467,18 +485,9 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
                 "note": "no_measurements_collected",
             }
         else:
-            # Deduplicate by bigram after sorting by bigram only.
-            all_entries.sort(key=lambda x: x[0])
-            values: List[float] = []
-            prev_bigram: Tuple[int, int] | None = None
-            for bigram, value in all_entries:
-                if bigram == prev_bigram:
-                    continue
-                values.append(value)
-                prev_bigram = bigram
             payload = {
-                "num_measurements": len(values),
-                "mean": float(sum(values) / len(values)) if values else 0.0,
+                "num_measurements": num_measurements,
+                "mean": mean,
                 "mode": cfg.mode,
                 "supervision": cfg.supervision,
             }
