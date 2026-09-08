@@ -62,19 +62,35 @@ base_eval="${EXPERIMENT_DIR}/utility_evals/base-student"
 student_eval="${EXPERIMENT_DIR}/utility_evals/${method_label}"
 mkdir -p "${base_eval}" "${student_eval}"
 
+run_utility_eval() {
+  local output="$1"
+  shift
+  local batch="${UTILITY_EVAL_BATCH}"
+  while (( batch >= 1 )); do
+    echo "Running utility evaluation with batch=${batch}"
+    if "${CONDA_ENV_PREFIX}/bin/python" -m torch.distributed.run --standalone \
+      --nproc_per_node="${ACC_NUM_PROCS}" "${REPO_ROOT}/scripts/eval_science_mcq.py" \
+      "$@" --dataset "${SCIENCE_EVAL_PATH}" --max-samples "${EVAL_SAMPLES}" \
+      --batch-size "${batch}" --max-new-tokens "${UTILITY_MAX_NEW_TOKENS}" \
+      --output "${output}"; then
+      return 0
+    fi
+    echo "Utility batch ${batch} failed; preserving resumable rank checkpoints."
+    if (( batch == 1 )); then
+      break
+    fi
+    batch=$(( (batch + 1) / 2 ))
+  done
+  return 1
+}
+
 if [[ ! -f "${base_eval}/base.summary.json" ]]; then
-  "${CONDA_ENV_PREFIX}/bin/python" -m torch.distributed.run --standalone \
-    --nproc_per_node="${ACC_NUM_PROCS}" "${REPO_ROOT}/scripts/eval_science_mcq.py" \
-    --model "${STUDENT_MODEL}" --dataset "${SCIENCE_EVAL_PATH}" \
-    --max-samples "${EVAL_SAMPLES}" --batch-size "${UTILITY_EVAL_BATCH}" \
-    --max-new-tokens "${UTILITY_MAX_NEW_TOKENS}" --output "${base_eval}/base.jsonl"
+  run_utility_eval "${base_eval}/base.jsonl" --model "${STUDENT_MODEL}"
 fi
 if [[ ! -f "${student_eval}/student.summary.json" ]]; then
-  "${CONDA_ENV_PREFIX}/bin/python" -m torch.distributed.run --standalone \
-    --nproc_per_node="${ACC_NUM_PROCS}" "${REPO_ROOT}/scripts/eval_science_mcq.py" \
-    --model "${STUDENT_MODEL}" --adapter "${adapter}" --dataset "${SCIENCE_EVAL_PATH}" \
-    --max-samples "${EVAL_SAMPLES}" --batch-size "${UTILITY_EVAL_BATCH}" \
-    --max-new-tokens "${UTILITY_MAX_NEW_TOKENS}" --output "${student_eval}/student.jsonl"
+  run_utility_eval "${student_eval}/student.jsonl" \
+    --model "${STUDENT_MODEL}" \
+    --adapter "${adapter}"
 fi
 if ! "${CONDA_ENV_PREFIX}/bin/python" "${REPO_ROOT}/scripts/compare_eval.py" \
   "${base_eval}/base.jsonl" "${student_eval}/student.jsonl" \
