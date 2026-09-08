@@ -46,6 +46,16 @@ def test_tensor_mask_batch_matches_individual_masks() -> None:
     assert torch.equal(batched, individual)
 
 
+def test_gamma_half_integer_threshold_matches_float64_boundary() -> None:
+    center = 1 << 62
+    values = center + torch.arange(-2048, 2049, dtype=torch.int64)
+
+    float64_reference = values.to(torch.float64).div(float(2**63)).lt(0.5)
+    integer_fast_path = values.lt(center - 256)
+
+    assert torch.equal(integer_fast_path, float64_reference)
+
+
 def test_radioactive_vectorization_matches_rowwise_equation() -> None:
     hash_fn = _hash(23)
     input_ids = torch.tensor([[2, 4, 6], [3, 5, 7], [8, 9, 10]])

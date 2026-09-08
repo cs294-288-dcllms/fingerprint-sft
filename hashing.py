@@ -144,8 +144,14 @@ class BigramHash:
         x = (x ^ (x >> 27)) * mul3
         x = x ^ (x >> 31)
         x = x & mask63
-        draws = x.to(torch.float64) / float(2**63)
-        mask = draws < float(self.config.gamma)
+        if self.config.gamma == 0.5:
+            # Match `(x.float64() / 2**63) < 0.5` exactly while avoiding
+            # prohibitively slow float64 arithmetic on consumer GPUs. Around
+            # 2**62, float64 rounds offsets -256..+255 to the boundary value.
+            mask = x < ((1 << 62) - 256)
+        else:
+            draws = x.to(torch.float64) / float(2**63)
+            mask = draws < float(self.config.gamma)
         if self.excluded.numel() > 0:
             excluded = self.excluded.to(dev)
             mask.index_fill_(1, excluded, False)
