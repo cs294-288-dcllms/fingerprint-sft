@@ -14,6 +14,7 @@ from stages.stage4_watermark_eval import (
     _build_metric_provenance,
     _build_position_batches,
     _effective_batch_size,
+    _filter_first_occurrences,
     _has_identity_token_mapping,
     _load_stage4_checkpoint,
     _validate_stage4_completion,
@@ -163,6 +164,30 @@ class Stage4BatchGuardTest(unittest.TestCase):
             actual = hash_fn.membership_batch(bigrams, token_ids)
 
             self.assertTrue(torch.equal(actual, expected))
+
+    def test_filters_rank_local_bigrams_by_first_occurrence(self) -> None:
+        seen = {(1, 2)}
+
+        bigrams, positions, samples = _filter_first_occurrences(
+            [(1, 2), (2, 3), (2, 3), (3, 4)],
+            [10, 11, 12, 13],
+            [0, 0, 1, 1],
+            seen,
+        )
+
+        self.assertEqual(bigrams, [(2, 3), (3, 4)])
+        self.assertEqual(positions, [11, 13])
+        self.assertEqual(samples, [0, 1])
+        self.assertEqual(seen, {(1, 2), (2, 3), (3, 4)})
+
+    def test_first_occurrence_filter_requires_aligned_arrays(self) -> None:
+        with self.assertRaisesRegex(ValueError, "differ in length"):
+            _filter_first_occurrences(
+                [(1, 2)],
+                [],
+                [0],
+                set(),
+            )
 
 
     def test_checkpoint_resumes_and_repairs_partial_tail(self) -> None:

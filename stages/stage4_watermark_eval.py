@@ -192,6 +192,34 @@ def _validate_stage4_completion(
         )
 
 
+def _filter_first_occurrences(
+    bigrams: Sequence[Tuple[int, int]],
+    student_positions: Sequence[int],
+    sample_indices: Sequence[int],
+    seen_bigrams: set[Tuple[int, int]],
+) -> tuple[List[Tuple[int, int]], List[int], List[int]]:
+    """Keep only each rank's first occurrence of a bigram, preserving order."""
+    if not (
+        len(bigrams) == len(student_positions) == len(sample_indices)
+    ):
+        raise ValueError("aligned Stage 4 measurement arrays differ in length")
+    kept_bigrams: List[Tuple[int, int]] = []
+    kept_positions: List[int] = []
+    kept_samples: List[int] = []
+    for bigram, student_position, sample_index in zip(
+        bigrams,
+        student_positions,
+        sample_indices,
+    ):
+        if bigram in seen_bigrams:
+            continue
+        seen_bigrams.add(bigram)
+        kept_bigrams.append(bigram)
+        kept_positions.append(int(student_position))
+        kept_samples.append(int(sample_index))
+    return kept_bigrams, kept_positions, kept_samples
+
+
 def _aggregate_stage4_shards(
     shard_paths: Sequence[Path],
 ) -> tuple[int, float]:
@@ -378,7 +406,8 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
     rank_path = tmp_dir / f"rank_{accelerator.process_index:03d}.jsonl"
 
     student_shared_mask = shared_mask
-    completed_positions, _ = _load_stage4_checkpoint(rank_path)
+    completed_positions, completed_entries = _load_stage4_checkpoint(rank_path)
+    seen_bigrams = {bigram for bigram, _ in completed_entries}
 
     batch_size = _effective_batch_size(
         cfg.batch_size,
@@ -470,6 +499,16 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
                 batch_student_positions.append(int(s_idx))
                 batch_sample_indices.append(int(idx))
 
+        (
+            batch_bigrams,
+            batch_student_positions,
+            batch_sample_indices,
+        ) = _filter_first_occurrences(
+            batch_bigrams,
+            batch_student_positions,
+            batch_sample_indices,
+            seen_bigrams,
+        )
         if not batch_bigrams:
             _append_stage4_checkpoint(rank_path, positions, batch_values)
             continue
