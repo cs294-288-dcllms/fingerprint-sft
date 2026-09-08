@@ -81,6 +81,7 @@ HASH_SEED="${HASH_SEED:-}"
 TRAIN_SEED="${TRAIN_SEED:-42}"
 ALT_SEED="${ALT_SEED:-43}"
 NUM_EXAMPLES="${NUM_EXAMPLES:-1024}"
+ALT_NUM_EXAMPLES="${ALT_NUM_EXAMPLES:-${NUM_EXAMPLES}}"
 EPOCHS="${EPOCHS:-3}"
 
 TEACHER_MODEL="${TEACHER_MODEL:-deepseek-ai/DeepSeek-R1-Distill-Qwen-7B}"
@@ -302,7 +303,7 @@ run_stage "Stage 1 – Teacher Generation (train traces)" "$SENTINELS_DIR/stage1
 stage1_alt_args=(
     --dataset "$DATASET"
     --split "$SPLIT"
-    --max-examples "$NUM_EXAMPLES"
+    --max-examples "$ALT_NUM_EXAMPLES"
     --teacher-model "$TEACHER_MODEL"
     "${teacher_adapter_args[@]}"
     --teacher-dtype "$TEACHER_DTYPE"
@@ -326,7 +327,7 @@ if [[ "$METHOD" == "radioactive" ]]; then
 elif [[ "$METHOD" == "ads" ]]; then
     stage1_alt_args+=(--lam "$LAMBDA")
 fi
-run_stage "Stage 1 – Teacher Generation (alt traces)" "$SENTINELS_DIR/stage1_alt_${method_label}_seed${ALT_SEED}.done" "${FORCE_STAGE1_ALT:-0}" \
+run_stage "Stage 1 – Teacher Generation (alt traces)" "$SENTINELS_DIR/stage1_alt_${method_label}_seed${ALT_SEED}_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE1_ALT:-0}" \
     "${ACC_CMD[@]}" --num_processes "${ACC_NUM_PROCS}" stages/stage1_generate.py "${stage1_alt_args[@]}"
 
 # ----------------------------------------------------------------------------
@@ -353,7 +354,7 @@ fi
 # Stage 2 – teacher eval on alternative traces
 # ----------------------------------------------------------------------------
 if [[ "$DATASET" == "gsm8k" || "$DATASET" == "oasst1" || "$DATASET" == "science" ]]; then
-    run_stage "Stage 2 – Teacher Eval (alt traces)" "$SENTINELS_DIR/stage2_alt_${method_label}_seed${ALT_SEED}.done" "${FORCE_STAGE2_ALT:-0}" \
+    run_stage "Stage 2 – Teacher Eval (alt traces)" "$SENTINELS_DIR/stage2_alt_${method_label}_seed${ALT_SEED}_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE2_ALT:-0}" \
         "${ACC_CMD[@]}" --num_processes "${ACC_NUM_PROCS}" stages/stage2_teacher_eval.py \
         --traces "$ALT_TRACES_JSONL" \
         --teacher-model "$TEACHER_MODEL" \
@@ -434,7 +435,7 @@ run_stage "Stage 4 – Watermark Eval (closed, supervised)" "$SENTINELS_DIR/stag
     --seed "$TRAIN_SEED" \
     --dataset "$DATASET"
 
-run_stage "Stage 4 – Watermark Eval (open, unsupervised)" "$SENTINELS_DIR/stage4_open_unsup_${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}.done" "${FORCE_STAGE4_OPEN_UNSUP:-0}" \
+run_stage "Stage 4 – Watermark Eval (open, unsupervised)" "$SENTINELS_DIR/stage4_open_unsup_${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE4_OPEN_UNSUP:-0}" \
     "${ACC_CMD[@]}" --num_processes "${ACC_NUM_PROCS}" stages/stage4_watermark_eval.py \
     --traces "$ALT_TRACES_JSONL" \
     --hash-config "$HASH_CFG" \
@@ -452,7 +453,7 @@ run_stage "Stage 4 – Watermark Eval (open, unsupervised)" "$SENTINELS_DIR/stag
     --seed "$ALT_SEED" \
     --dataset "$DATASET"
 
-run_stage "Stage 4 – Watermark Eval (closed, unsupervised)" "$SENTINELS_DIR/stage4_closed_unsup_${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}.done" "${FORCE_STAGE4_CLOSED_UNSUP:-0}" \
+run_stage "Stage 4 – Watermark Eval (closed, unsupervised)" "$SENTINELS_DIR/stage4_closed_unsup_${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE4_CLOSED_UNSUP:-0}" \
     "${ACC_CMD[@]}" --num_processes "${ACC_NUM_PROCS}" stages/stage4_watermark_eval.py \
     --traces "$ALT_TRACES_JSONL" \
     --hash-config "$HASH_CFG" \
@@ -476,7 +477,7 @@ run_stage "Stage 4 – Watermark Eval (closed, unsupervised)" "$SENTINELS_DIR/st
 if [[ "${SKIP_STAGE5:-0}" == "1" ]]; then
     echo -e "${YELLOW}⏭️  Skipping Stage 5 – Plotting by request.${RESET}"
 else
-    run_stage "Stage 5 – Plotting" "$SENTINELS_DIR/stage5_${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}.done" "${FORCE_STAGE5:-0}" \
+    run_stage "Stage 5 – Plotting" "$SENTINELS_DIR/stage5_${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}_alt_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE5:-0}" \
         "${PY_CMD[@]}" stages/stage5_plotting.py \
         --exp-dir "$EXP_DIR" \
         --fig-dir "$FIG_DIR" \
