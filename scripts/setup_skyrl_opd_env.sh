@@ -30,6 +30,15 @@ grep -q SKYRL_FORCE_EAGER_LORA "${SKYRL_CONFIG_PATH}" || {
   exit 1
 }
 
+SKYRL_ROUTER_PATH="${SKYRL_DIR}/skyrl/backends/skyrl_train/inference_servers/vllm_router.py"
+if ! grep -Fq "getattr(self._router_args" "${SKYRL_ROUTER_PATH}"; then
+  sed -i 's|is_pd = self._router_args.vllm_pd_disaggregation or self._router_args.pd_disaggregation|is_pd = getattr(self._router_args, "vllm_pd_disaggregation", False) or getattr(self._router_args, "pd_disaggregation", False)|' "${SKYRL_ROUTER_PATH}"
+fi
+grep -Fq "getattr(self._router_args" "${SKYRL_ROUTER_PATH}" || {
+  echo "Failed to patch SkyRL vllm-router schema compatibility" >&2
+  exit 1
+}
+
 if [[ ! -x "${CONDA_ENV_PREFIX}/bin/python" ]]; then
   "${CONDA_BIN}" create --prefix "${CONDA_ENV_PREFIX}" python=3.12 pip -y
 fi
