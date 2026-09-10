@@ -126,6 +126,7 @@ write_status running "${OPD_MAX_TRAINING_STEPS} OPD steps"
     generator.inference_engine.run_engines_locally=true \
     generator.inference_engine.weight_sync_backend=nccl \
     generator.inference_engine.gpu_memory_utilization="${OPD_GPU_MEMORY_UTILIZATION}" \
+    generator.inference_engine.engine_init_kwargs.max_model_len="${OPD_ENGINE_MAX_MODEL_LEN}" \
     generator.inference_engine.enforce_eager=false \
     generator.batched=true \
     generator.n_samples_per_prompt="${OPD_N_SAMPLES_PER_PROMPT}" \
