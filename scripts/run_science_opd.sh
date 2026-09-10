@@ -24,7 +24,7 @@ EVAL_DIR="${OPD_OUTPUT_DIR}/utility_evals"
 STATUS_FILE="${OPD_OUTPUT_DIR}/status"
 COMPLETE_FILE="${OPD_OUTPUT_DIR}/complete"
 
-mkdir -p "${OPD_OUTPUT_DIR}" "${CKPT_DIR}" "${EXPORT_DIR}" "${LOG_DIR}" "${EVAL_DIR}" "${OPD_RUNTIME_DIR}/ray" "${OPD_RUNTIME_DIR}/triton"
+mkdir -p "${OPD_OUTPUT_DIR}" "${CKPT_DIR}" "${EXPORT_DIR}" "${LOG_DIR}" "${EVAL_DIR}" "${OPD_RAY_TMPDIR}" "${OPD_RUNTIME_DIR}/triton"
 
 if [[ -f "${COMPLETE_FILE}" ]]; then
   echo "OPD arm already complete: ${OPD_RUN_NAME}"
@@ -80,7 +80,7 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
 export TOKENIZERS_PARALLELISM=false
 export TMPDIR="${OPD_RUNTIME_DIR}"
 export TRITON_CACHE_DIR="${OPD_RUNTIME_DIR}/triton"
-export RAY_TMPDIR="${OPD_RUNTIME_DIR}/ray"
+export RAY_TMPDIR="${OPD_RAY_TMPDIR}"
 export RAY_CGRAPH_get_timeout="${RAY_CGRAPH_get_timeout:-1800}"
 export PYTHONPATH="${REPO_ROOT}:${SKYRL_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
