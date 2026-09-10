@@ -38,6 +38,7 @@ import skyrl
 import torch
 import transformers
 import vllm
+import vllm_router
 
 print(
     "SkyRL OPD environment ready:",
