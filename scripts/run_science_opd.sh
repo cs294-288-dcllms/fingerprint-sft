@@ -136,7 +136,6 @@ write_status running "${OPD_MAX_TRAINING_STEPS} OPD steps"
     generator.sampling_params.max_generate_length="${OPD_MAX_GENERATE_LENGTH}" \
     generator.sampling_params.temperature="${OPD_TEMPERATURE}" \
     generator.sampling_params.top_p="${OPD_TOP_P}" \
-    generator.chat_template_kwargs.enable_thinking=true \
     environment.env_class=aime \
     trainer.epochs=1 \
     trainer.max_training_steps="${OPD_MAX_TRAINING_STEPS}" \
