@@ -127,7 +127,7 @@ write_status running "${OPD_MAX_TRAINING_STEPS} OPD steps"
     generator.inference_engine.weight_sync_backend=nccl \
     generator.inference_engine.gpu_memory_utilization="${OPD_GPU_MEMORY_UTILIZATION}" \
     generator.inference_engine.engine_init_kwargs.max_model_len="${OPD_ENGINE_MAX_MODEL_LEN}" \
-    generator.inference_engine.enforce_eager=false \
+    generator.inference_engine.enforce_eager="${OPD_ENFORCE_EAGER}" \
     generator.batched=true \
     generator.n_samples_per_prompt="${OPD_N_SAMPLES_PER_PROMPT}" \
     generator.sampling_params.max_generate_length="${OPD_MAX_GENERATE_LENGTH}" \

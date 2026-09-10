@@ -75,6 +75,7 @@ Each stage is resumable and writes generated checkpoints, logs, and evaluations 
 | Sampling | temperature 1.0, top-p 1.0 |
 | Maximum prompt / generation | 1,024 / 2,048 tokens |
 | vLLM engine context | 4,096 tokens |
+| vLLM execution mode | eager (stable eight-engine startup) |
 | GPUs | 8 |
 | Policy exports | every 25 steps |
 | Full checkpoints | every 10 steps, keep 2 |
