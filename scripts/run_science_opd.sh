@@ -141,8 +141,8 @@ write_status running "${OPD_MAX_TRAINING_STEPS} OPD steps"
     trainer.max_training_steps="${OPD_MAX_TRAINING_STEPS}" \
     trainer.train_batch_size="${OPD_TRAIN_BATCH_SIZE}" \
     trainer.policy_mini_batch_size="${OPD_MINI_BATCH_SIZE}" \
-    trainer.micro_forward_batch_size_per_gpu=1 \
-    trainer.micro_train_batch_size_per_gpu=1 \
+    trainer.micro_forward_batch_size_per_gpu="${OPD_MICRO_FORWARD_BATCH_SIZE}" \
+    trainer.micro_train_batch_size_per_gpu="${OPD_MICRO_TRAIN_BATCH_SIZE}" \
     trainer.update_epochs_per_batch="${OPD_UPDATE_EPOCHS}" \
     trainer.remove_microbatch_padding=false \
     trainer.max_prompt_length="${OPD_MAX_PROMPT_LENGTH}" \
