@@ -187,5 +187,6 @@ done < <(
   exit 1
 }
 printf '%s\n' "${latest_policy}" > "${OPD_OUTPUT_DIR}/latest_policy.txt"
+SFT_CONDA_ENV_PREFIX="${CONDA_ENV_PREFIX}" "${REPO_ROOT}/scripts/verify_science_opd_completion.sh" "${OPD_OUTPUT_DIR}"
 touch "${COMPLETE_FILE}"
 write_status complete "training and per-export utility evaluation complete"
