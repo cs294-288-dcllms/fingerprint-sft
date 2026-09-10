@@ -13,6 +13,10 @@ source "${OPD_COMMON_CONFIG}"
 source "${ARM_CONFIG}"
 set +a
 
+export HF_HOME
+export HF_DATASETS_CACHE
+export XDG_CACHE_HOME
+
 CKPT_DIR="${OPD_OUTPUT_DIR}/checkpoints"
 EXPORT_DIR="${OPD_OUTPUT_DIR}/exports"
 LOG_DIR="${OPD_OUTPUT_DIR}/logs"
