@@ -8,7 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Sequence
 
 import torch
 import re
@@ -66,6 +66,95 @@ def _batched(seq: List, batch_size: int) -> Iterable[List]:
     """
     for start in range(0, len(seq), batch_size):
         yield seq[start : start + batch_size]
+
+
+def _load_length_hints(path: Path, expected_rows: int) -> list[int]:
+    """Load response lengths from an index-ordered completed trace file."""
+    lengths: list[int] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Invalid JSON in length-hint file {path} at line {line_number}"
+                ) from exc
+            response = row.get("response") if isinstance(row, dict) else None
+            if not isinstance(response, str):
+                raise ValueError(
+                    f"Length-hint file {path} line {line_number} has no string response"
+                )
+            lengths.append(len(response))
+    if len(lengths) != expected_rows:
+        raise ValueError(
+            f"Length-hint file {path} has {len(lengths)} rows; expected {expected_rows}"
+        )
+    return lengths
+
+
+def _auto_length_hint_candidates(output_jsonl: Path) -> list[Path]:
+    """Return completed sibling trace sets suitable only for length prediction."""
+    current_label = output_jsonl.parent.name
+    traces_root = output_jsonl.parent.parent
+    if current_label.startswith("ads-lambda"):
+        labels: Sequence[str] = ("ads-lambda16", "ads-lambda8", "control")
+    elif current_label.startswith("radioactive-delta"):
+        labels = ("control", "ads-lambda8", "ads-lambda16", "ads-lambda32")
+    else:
+        labels = ()
+    return [
+        traces_root / label / "traces.jsonl"
+        for label in labels
+        if label != current_label
+    ]
+
+
+def _resolve_length_hints(
+    setting: str | Path | None,
+    *,
+    output_jsonl: Path,
+    expected_rows: int,
+) -> tuple[list[int] | None, Path | None]:
+    """Resolve explicit or automatic response-length hints.
+
+    Hints affect batching order only. They never replace prompts, responses, or
+    dataset rows. Invalid automatic candidates are skipped; an invalid explicit
+    path is treated as a configuration error.
+    """
+    if setting is None:
+        return None, None
+    value = str(setting).strip()
+    if not value or value.lower() in {"none", "off", "0", "false"}:
+        return None, None
+
+    explicit = value.lower() != "auto"
+    candidates = [Path(value)] if explicit else _auto_length_hint_candidates(output_jsonl)
+    errors: list[str] = []
+    for candidate in candidates:
+        if not candidate.is_file():
+            if explicit:
+                errors.append(f"{candidate} does not exist")
+            continue
+        try:
+            return _load_length_hints(candidate, expected_rows), candidate
+        except ValueError as exc:
+            errors.append(str(exc))
+            if explicit:
+                break
+    if explicit:
+        detail = "; ".join(errors) if errors else f"Unable to load {value}"
+        raise ValueError(f"Invalid explicit length hints: {detail}")
+    return None, None
+
+
+def _order_examples_by_length_hints(
+    indexed_examples: Sequence[tuple[int, object]],
+    hints: Sequence[int],
+) -> list[tuple[int, object]]:
+    """Group similarly sized predicted responses while retaining global indices."""
+    return sorted(indexed_examples, key=lambda item: (hints[item[0]], item[0]))
 
 
 def _load_checkpoint_rows(path: Path) -> List[dict]:
@@ -143,6 +232,7 @@ def _build_metadata_payload(
     num_examples: int,
     hash_cfg: HashConfig | None = None,
     trace_sha256: str | None = None,
+    length_hint_path: Path | None = None,
 ) -> dict[str, object]:
     """Build reproducibility metadata for a completed trace set."""
     payload: dict[str, object] = {
@@ -164,7 +254,11 @@ def _build_metadata_payload(
         "temperature": cfg.temperature,
         "top_p": cfg.top_p,
         "repetition_penalty": cfg.repetition_penalty,
+        "batch_ordering": "length_hint" if length_hint_path is not None else "dataset",
     }
+    if length_hint_path is not None:
+        payload["length_hint_file"] = str(length_hint_path.resolve())
+        payload["length_hint_sha256"] = _sha256_file(length_hint_path)
     if hash_cfg is not None:
         payload["hash_seed"] = hash_cfg.seed
         payload["hash_gamma"] = hash_cfg.gamma
@@ -261,7 +355,12 @@ def _extract_gsm8k_solution(solution_text: str) -> str:
     return numeric
 
 
-def run_stage1(cfg: GenerationConfig, hash_cfg: HashConfig) -> Path:
+def run_stage1(
+    cfg: GenerationConfig,
+    hash_cfg: HashConfig,
+    *,
+    length_hints: str | Path | None = "auto",
+) -> Path:
     """Run Stage 1 to generate teacher traces with optional watermarking.
 
     Args:
@@ -301,6 +400,19 @@ def run_stage1(cfg: GenerationConfig, hash_cfg: HashConfig) -> Path:
         for item in local_examples
         if int(item[0]) not in completed_indices
     ]
+    hint_lengths, length_hint_path = _resolve_length_hints(
+        length_hints,
+        output_jsonl=cfg.output_jsonl,
+        expected_rows=total_examples,
+    )
+    if hint_lengths is not None:
+        local_examples = _order_examples_by_length_hints(local_examples, hint_lengths)
+        if accelerator.is_local_main_process:
+            print(
+                "Stage 1: length-aware batching from "
+                f"{length_hint_path} for {len(local_examples)} remaining local examples",
+                flush=True,
+            )
     if rows and accelerator.is_local_main_process:
         print(f"Stage 1: resuming after {len(rows)} completed local examples", flush=True)
     teacher_tokenizer = load_tokenizer(cfg.teacher, padding_side="left")
@@ -471,6 +583,7 @@ def run_stage1(cfg: GenerationConfig, hash_cfg: HashConfig) -> Path:
                 len(merged),
                 hash_cfg=hash_cfg,
                 trace_sha256=_sha256_file(cfg.output_jsonl),
+                length_hint_path=length_hint_path,
             ),
         )
 
@@ -510,6 +623,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top-p", type=float, default=0.95)
     parser.add_argument("--repetition-penalty", type=float, default=1.0)
+    parser.add_argument(
+        "--length-hints",
+        type=str,
+        default=os.environ.get("ADFP_LENGTH_HINTS", "auto"),
+        help=(
+            "Index-ordered completed traces used only to group similar response "
+            "lengths; use 'auto' for compatible sibling traces or 'none' to disable."
+        ),
+    )
     return parser
 
 
@@ -544,7 +666,7 @@ def main(argv: list[str] | None = None) -> None:
         metadata_path=args.metadata,
     )
     hash_cfg = load_hash_config(args.hash_config)
-    run_stage1(cfg, hash_cfg)
+    run_stage1(cfg, hash_cfg, length_hints=args.length_hints)
 
 
 if __name__ == "__main__":

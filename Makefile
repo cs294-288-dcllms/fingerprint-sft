@@ -1,4 +1,4 @@
-.PHONY: env data teacher control adfp8 adfp16 radioactive all test
+.PHONY: env data teacher control adfp8 adfp16 adfp32 radioactive all test
 
 env:
 	./scripts/bootstrap_conda.sh
@@ -17,6 +17,9 @@ adfp8:
 
 adfp16:
 	./scripts/run_condition.sh configs/strategies/adfp-lambda16.env
+
+adfp32:
+	./scripts/run_condition.sh configs/strategies/adfp-lambda32.env
 
 radioactive:
 	./scripts/run_condition.sh configs/strategies/radioactive-delta2.env

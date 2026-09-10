@@ -1,0 +1,62 @@
+{
+  "dataset": "open-r1/Mixture-of-Thoughts",
+  "config": "science",
+  "revision": "e55fa28006c0d0ec60fb3547520f775dd42d02cd",
+  "model_tokenizer": "Qwen/Qwen3.5-4B",
+  "seed": 42,
+  "selection_order": "deterministic_global_shuffle",
+  "max_tokens": 4096,
+  "max_traces_per_train_prompt": 3,
+  "eval_bucket_denominator": 5,
+  "source_rows_scanned": 13380,
+  "rejection_counts": {
+    "eval_full": 1285,
+    "extra_eval_trace": 44,
+    "incomplete_thinking_trace": 9,
+    "over_token_limit": 2040,
+    "too_many_train_traces": 2
+  },
+  "prompt_overlap": 0,
+  "train": {
+    "samples": 9000,
+    "unique_prompts": 8183,
+    "traces_per_prompt": {
+      "1": 7402,
+      "2": 745,
+      "3": 36
+    },
+    "source_counts": {
+      "nvidia/Llama-Nemotron-Post-Training-Dataset": 9000
+    },
+    "qwen35_tokens": {
+      "min": 301,
+      "p50": 1247,
+      "p75": 2077,
+      "p90": 3055,
+      "p95": 3480,
+      "max": 4096
+    },
+    "path": "data/science/train_9k.jsonl",
+    "sha256": "8dc956cee038d43d27078f2210ed9523dedff903a1036c8a40dc163e45c4c433"
+  },
+  "eval": {
+    "samples": 1000,
+    "unique_prompts": 1000,
+    "traces_per_prompt": {
+      "1": 1000
+    },
+    "source_counts": {
+      "nvidia/Llama-Nemotron-Post-Training-Dataset": 1000
+    },
+    "qwen35_tokens": {
+      "min": 351,
+      "p50": 1339,
+      "p75": 2198,
+      "p90": 3078,
+      "p95": 3511,
+      "max": 4094
+    },
+    "path": "data/science/eval_1k.jsonl",
+    "sha256": "b516d05847f4c22fe12ce8496b78711ce79a4f98be4f0e37d003f2e5aa37b186"
+  }
+}

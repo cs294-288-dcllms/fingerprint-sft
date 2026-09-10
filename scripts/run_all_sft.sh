@@ -9,7 +9,7 @@ source "${COMMON_CONFIG}"
 set +a
 
 "${REPO_ROOT}/scripts/run_teacher_sft.sh" "${COMMON_CONFIG}"
-for strategy in control adfp-lambda8 adfp-lambda16 radioactive-delta2; do
+for strategy in control adfp-lambda8 adfp-lambda16 adfp-lambda32 radioactive-delta2; do
   "${REPO_ROOT}/scripts/run_condition.sh" \
     "${REPO_ROOT}/configs/strategies/${strategy}.env" "${COMMON_CONFIG}"
 done
