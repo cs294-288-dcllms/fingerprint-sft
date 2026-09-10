@@ -38,6 +38,8 @@ Train the λ16 SFT student:
 ./scripts/run_condition.sh configs/strategies/adfp-lambda16.env
 ```
 
+The OPD launcher requires this checkpoint to complete a 1,000-question evaluation and significantly outperform the base student before either OPD arm can start.
+
 Create the separate SkyRL environment:
 
 ```bash
