@@ -1,78 +1,104 @@
-# Fingerprint SFT
+# Fingerprint Distillation
 
-Core fingerprinting stages are adapted from [YixuanEvenXu/antidistillation-fingerprinting](https://github.com/YixuanEvenXu/antidistillation-fingerprinting) at upstream commit `a05ad2bf6624b6c7d1ecf8064349f6e71035fc1e`.
+Reproducible code, configs, and the fixed science split for testing whether an ADFP fingerprint transfers from a Qwen3.5-9B teacher to a Qwen3.5-4B student through SFT and on-policy distillation.
 
-Reusable code and configs for training and evaluating fingerprinted teacher-to-student SFT runs.
+Core ADFP stages are adapted from `YixuanEvenXu/antidistillation-fingerprinting` at commit `a05ad2bf6624b6c7d1ecf8064349f6e71035fc1e`. OPD uses SkyRL at commit `02a2b53a4142d07a38abf67f9ed7840522ee16ed`.
 
-The default configuration uses:
+## Experiment plan
 
-- Teacher: `Qwen/Qwen3.5-9B`
-- Proxy/student: `Qwen/Qwen3.5-4B`
-- Data: 9,000 Mixture-of-Thoughts science training traces and 1,000 held-out questions
-- Strategies: no fingerprint, ADFP λ=8/16/32, and radioactive δ=2
-- Evaluation: science utility plus white-box/black-box detection on known and independent traces
+1. Fine-tune Qwen3.5-9B on 9,000 Mixture-of-Thoughts science reasoning traces and validate it on the fixed 1,000-question split.
+2. Generate ADFP λ16 teacher traces and SFT Qwen3.5-4B on those traces.
+3. Start both OPD arms from the same λ16 student checkpoint:
+   - control teacher: ordinary science-SFT Qwen3.5-9B logits;
+   - fingerprinted teacher: the same teacher with ADFP λ16 applied online to its logits.
+4. Evaluate science utility at OPD steps 25, 50, 75, 100, and 125, then compare utility and fingerprint detection between the two arms.
+
+
+## Data
+
+- `data/science/train_9k.jsonl`: 9,000 science examples with reasoning traces.
+- `data/science/eval_1k.jsonl`: 1,000 held-out questions with no prompt overlap.
 
 ## Setup
 
 ```bash
 ./scripts/bootstrap_conda.sh
-```
-
-The pinned environment defaults to `/tmp/fingerprint-sft-conda`. Override `CONDA_ENV_PREFIX` if needed.
-
-## Science data
-
-The exact deterministic split used by the experiments is included:
-
-- `data/science/train_9k.jsonl`: 9,000 thinking-trace training examples
-- `data/science/eval_1k.jsonl`: 1,000 held-out examples with no prompt overlap
-
-To build the tokenizer-rendered teacher SFT file locally:
-
-```bash
 ./scripts/prepare_science.sh
 ```
 
-The source split is reused as-is; only the derived SFT file is written under ignored `data/local/`.
-
-## Train and validate the teacher
+Train and validate the teacher:
 
 ```bash
 ./scripts/run_teacher_sft.sh
 ```
 
-The teacher adapter is accepted only when its 1,000-question held-out evaluation significantly improves over the base teacher.
-
-## Run one SFT strategy
+Train the λ16 SFT student:
 
 ```bash
-./scripts/run_condition.sh configs/strategies/control.env
-./scripts/run_condition.sh configs/strategies/adfp-lambda8.env
 ./scripts/run_condition.sh configs/strategies/adfp-lambda16.env
-./scripts/run_condition.sh configs/strategies/adfp-lambda32.env
-./scripts/run_condition.sh configs/strategies/radioactive-delta2.env
 ```
 
-Each strategy creates a separate student LoRA checkpoint. Science generation defaults to 3,840 new tokens so long Qwen reasoning traces can reach their final answer while retaining prompt headroom in the SFT window. Compatible completed traces are used only as response-length hints to group similar examples and reduce padding waste. If generation exceeds GPU memory, the runner halves the Stage 1 batch size and resumes its per-rank checkpoints.
-
-## Run the complete SFT matrix
+Create the separate SkyRL environment:
 
 ```bash
-./scripts/run_all_sft.sh
+./scripts/setup_skyrl_opd_env.sh
 ```
 
-Stages are resumable through output files and sentinels. Results are written under `outputs/experiments/` and are intentionally excluded from Git.
+Run both OPD arms sequentially:
+
+```bash
+./scripts/run_opd_plan.sh
+```
+
+Each stage is resumable and writes generated checkpoints, logs, and evaluations under ignored `outputs/`.
+
+## OPD configuration
+
+| Parameter | Value |
+|---|---:|
+| Student initialization | Qwen3.5-4B ADFP λ16 SFT |
+| Teacher | Qwen3.5-9B science SFT |
+| Training prompts | 9,000 |
+| Held-out evaluation prompts | 1,000 |
+| Prompt batch size | 72 |
+| Rollouts per prompt | 4 |
+| Trajectories per update | 288 |
+| Training steps | 125 |
+| Policy mini-batch size | 72 |
+| Update epochs per batch | 1 |
+| Learning rate | `1e-5` |
+| Warmup steps | 5 |
+| Weight decay | `0.01` |
+| LoRA | rank 32, alpha 64, dropout 0 |
+| Sampling | temperature 1.0, top-p 1.0 |
+| Maximum prompt / generation | 1,024 / 2,048 tokens |
+| GPUs | 8 |
+| Policy exports | every 25 steps |
+| Full checkpoints | every 10 steps, keep 2 |
+
+The OPD reward is the dense token-level teacher/student log-probability difference. Stored teacher responses are not OPD targets: the student generates fresh reasoning traces and the teacher scores those generated tokens.
+
+For the fingerprinted-teacher arm:
+
+| ADFP parameter | Value |
+|---|---:|
+| λ | 16 |
+| γ | 0.5 |
+| Hash seed | 294288 |
+| Proxy model | Qwen3.5-4B |
+| Context | token bigram |
+| Position chunk | 8 |
+
+Configuration files:
+
+- `configs/science-qwen35.env`: shared models, data, and SFT settings.
+- `configs/strategies/adfp-lambda16.env`: λ16 SFT student.
+- `configs/opd/common.env`: shared OPD hyperparameters.
+- `configs/opd/control-teacher.env`: ordinary-teacher OPD arm.
+- `configs/opd/adfp-teacher-lambda16.env`: online ADFP-teacher OPD arm.
 
 ## Tests
 
 ```bash
 make test
 ```
-
-## Configuration
-
-- `configs/science-qwen35.env`: models, paths, distributed settings, and SFT hyperparameters
-- `configs/teacher-sft.env`: teacher-specific SFT and evaluation settings
-- `configs/strategies/*.env`: fingerprint method and strength
-
-All values can be overridden with environment variables.

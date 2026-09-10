@@ -30,7 +30,6 @@ comparison="${EXPERIMENT_DIR}/teacher_evals/sft/comparison_to_base.json"
 case "${METHOD}" in
   control) method_label=control ;;
   ads) method_label="ads-lambda${LAMBDA//./_}" ;;
-  radioactive) method_label="radioactive-delta${DELTA//./_}" ;;
   *) echo "Unsupported METHOD=${METHOD}" >&2; exit 2 ;;
 esac
 

@@ -1,0 +1,8 @@
+# SkyRL is checked out at the commit pinned in scripts/setup_skyrl_opd_env.sh.
+-e ./external/skyrl[fsdp]
+
+# Versions validated for the Qwen3.5 OPD runs.
+torch==2.13.0
+transformers==5.16.1
+ray==2.57.0
+vllm==0.28.0

@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-CONDITIONS = ("control", "ads-lambda8", "ads-lambda16", "radioactive-delta2")
+CONDITIONS = ("control", "ads-lambda16")
 VARIANTS = (
     "open_supervised",
     "closed_supervised",
