@@ -21,6 +21,15 @@ if [[ "${actual_commit}" != "${SKYRL_COMMIT}" ]]; then
   git -C "${SKYRL_DIR}" checkout --detach "${SKYRL_COMMIT}"
 fi
 
+SKYRL_CONFIG_PATH="${SKYRL_DIR}/skyrl/train/config/config.py"
+if ! grep -q SKYRL_FORCE_EAGER_LORA "${SKYRL_CONFIG_PATH}"; then
+  sed -i 's|if _uses_lora_weight_sync(self) and ie_cfg.enforce_eager and ie_cfg.backend == "vllm":|if _uses_lora_weight_sync(self) and ie_cfg.enforce_eager and ie_cfg.backend == "vllm" and os.environ.get("SKYRL_FORCE_EAGER_LORA", "0") != "1":|' "${SKYRL_CONFIG_PATH}"
+fi
+grep -q SKYRL_FORCE_EAGER_LORA "${SKYRL_CONFIG_PATH}" || {
+  echo "Failed to patch SkyRL explicit eager-LoRA override" >&2
+  exit 1
+}
+
 if [[ ! -x "${CONDA_ENV_PREFIX}/bin/python" ]]; then
   "${CONDA_BIN}" create --prefix "${CONDA_ENV_PREFIX}" python=3.12 pip -y
 fi
