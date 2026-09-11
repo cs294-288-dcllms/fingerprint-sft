@@ -24,6 +24,7 @@ EVAL_DIR="${OPD_OUTPUT_DIR}/utility_evals"
 STATUS_FILE="${OPD_OUTPUT_DIR}/status"
 COMPLETE_FILE="${OPD_OUTPUT_DIR}/complete"
 VERIFIED_FILE="${OPD_OUTPUT_DIR}/verified_complete.json"
+OPD_TMPDIR="${OPD_TMPDIR:-${OPD_RAY_TMPDIR}/tmp}"
 
 mkdir -p \
   "${OPD_OUTPUT_DIR}" \
@@ -32,6 +33,7 @@ mkdir -p \
   "${LOG_DIR}" \
   "${EVAL_DIR}" \
   "${OPD_RAY_TMPDIR}" \
+  "${OPD_TMPDIR}" \
   "${OPD_RUNTIME_DIR}/triton" \
   "${OPD_RUNTIME_DIR}/torchinductor" \
   "${OPD_RUNTIME_DIR}/cuda"
@@ -89,7 +91,9 @@ fi
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
 export TOKENIZERS_PARALLELISM=false
 export SKYRL_FORCE_EAGER_LORA="${SKYRL_FORCE_EAGER_LORA:-1}"
-export TMPDIR="${OPD_RUNTIME_DIR}"
+# Multiprocessing managers create AF_UNIX sockets below TMPDIR. Keep this path
+# short; OPD_OUTPUT_DIR can exceed Linux's socket path limit inside Ray workers.
+export TMPDIR="${OPD_TMPDIR}"
 export TRITON_CACHE_DIR="${OPD_RUNTIME_DIR}/triton"
 export TORCHINDUCTOR_CACHE_DIR="${OPD_RUNTIME_DIR}/torchinductor"
 export CUDA_CACHE_PATH="${OPD_RUNTIME_DIR}/cuda"
