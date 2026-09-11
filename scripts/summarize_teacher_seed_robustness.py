@@ -28,6 +28,7 @@ def main() -> None:
     )
     parser.add_argument("--results-root", type=Path, required=True)
     parser.add_argument("--seeds", type=int, nargs="+", required=True)
+    parser.add_argument("--expected-examples", type=int, default=1000)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--markdown", type=Path, required=True)
     args = parser.parse_args()
@@ -35,12 +36,19 @@ def main() -> None:
     seeds = list(dict.fromkeys(args.seeds))
     if len(seeds) < 2:
         raise SystemExit("at least two teacher sampling seeds are required")
+    if args.expected_examples <= 0:
+        raise SystemExit("expected examples must be positive")
+    result_suffix = (
+        "" if args.expected_examples == 1000 else f"_n{args.expected_examples}"
+    )
 
     prompt_digest: str | None = None
     pairs: dict[str, dict[str, Any]] = {}
     for seed in seeds:
-        pair = read_json(args.results_root / "pairs" / f"seed{seed}.json")
-        assert pair["paired_prompts"] == 1000
+        pair = read_json(
+            args.results_root / "pairs" / f"seed{seed}{result_suffix}.json"
+        )
+        assert pair["paired_prompts"] == args.expected_examples
         assert pair["prompt_mismatches"] == 0
         assert pair["solution_mismatches"] == 0
         assert pair["baseline_teacher_seed"] == 42
@@ -62,8 +70,9 @@ def main() -> None:
         "# Same known prompts, different teacher sampling seeds",
         "",
         (
-            "Every row uses the same 1,000 prompts. Only the teacher decoding seed "
-            "changes; no student is retrained."
+            f"Every row uses the same {args.expected_examples:,} prompts. "
+            "Only the teacher decoding seed changes; no student is "
+            "retrained."
         ),
         "",
         "| Checkpoint | Detector | "
@@ -85,13 +94,17 @@ def main() -> None:
             rendered: list[str] = []
             detected_count = 0
             for seed in seeds:
-                metric = read_json(target_dir / f"seed{seed}" / f"watermark_{mode}.json")
+                metric = read_json(
+                    target_dir
+                    / f"seed{seed}{result_suffix}"
+                    / f"watermark_{mode}.json"
+                )
                 pair = pairs[str(seed)]
                 assert metric["dataset"] == "science"
                 assert metric["mode"] == mode
                 assert metric["supervision"] == "unsupervised"
                 assert metric["seed"] == seed
-                assert metric["trace_examples"] == 1000
+                assert metric["trace_examples"] == args.expected_examples
                 assert str(Path(metric["trace_file"]).resolve()) == str(
                     Path(pair["resampled_trace_file"]).resolve()
                 )
@@ -133,7 +146,7 @@ def main() -> None:
         "verified_utc": datetime.now(UTC).isoformat(),
         "baseline_teacher_seed": 42,
         "teacher_sampling_seeds": seeds,
-        "paired_prompts": 1000,
+        "paired_prompts": args.expected_examples,
         "prompt_sha256": prompt_digest,
         "student_retrained_per_seed": False,
         "pairs": pairs,

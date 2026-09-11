@@ -61,7 +61,7 @@ After OPD, evaluate sensitivity to the teacher's sampling seed:
 ./scripts/run_teacher_seed_robustness.sh
 ```
 
-This reuses the same 1,000 prompts for every seed and writes a compact
+This reuses the same 9,000 training prompts for every seed and writes a compact
 white-box/black-box table under `teacher_seed_robustness/results.md`.
 
 ## OPD configuration

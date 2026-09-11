@@ -14,12 +14,32 @@ PYTHON="${CONDA_ENV_PREFIX}/bin/python"
 ACCELERATE="${CONDA_ENV_PREFIX}/bin/accelerate"
 RESULTS_ROOT="${TEACHER_SEED_RESULTS_ROOT:-${EXPERIMENT_DIR}/teacher_seed_robustness}"
 TRAIN_TRACES="${EXPERIMENT_DIR}/training_traces/ads-lambda16/traces.jsonl"
+TRAIN_CONTROL_TRACES="${EXPERIMENT_DIR}/training_traces/control/traces.jsonl"
 LEGACY_SEED43_TRACES="${EXPERIMENT_DIR}/alternative_traces/ads-lambda16/traces.jsonl"
+LEGACY_SEED43_METADATA="${EXPERIMENT_DIR}/alternative_traces/ads-lambda16/metadata.json"
 LENGTH_HINTS="${TEACHER_RESAMPLE_LENGTH_HINTS:-${EXPERIMENT_DIR}/alternative_traces/control/traces.jsonl}"
 HASH_CONFIG="${EXPERIMENT_DIR}/hash_seed/hash_config.json"
 SFT_ADAPTER="${TEACHER_SEED_SFT_ADAPTER:-${EXPERIMENT_DIR}/models/${STUDENT_TAG_OVERRIDE}_ads-lambda16_lr5e-05_e1/student_lora}"
 OPD_CONTROL_ROOT="${TEACHER_SEED_OPD_CONTROL_ROOT:-${EXPERIMENT_DIR}/opd/control-teacher}"
 OPD_ADFP_ROOT="${TEACHER_SEED_OPD_ADFP_ROOT:-${EXPERIMENT_DIR}/opd/adfp-teacher-lambda16}"
+
+jsonl_rows() {
+  awk 'NF { rows += 1 } END { print rows + 0 }' "$1"
+}
+
+has_requested_rows() {
+  local path="$1"
+  [[ -s "${path}" ]] &&
+    [[ "$(jsonl_rows "${path}")" -eq "${TEACHER_RESAMPLE_EXAMPLES}" ]]
+}
+
+if ! has_requested_rows "${LENGTH_HINTS}"; then
+  if has_requested_rows "${TRAIN_CONTROL_TRACES}"; then
+    LENGTH_HINTS="${TRAIN_CONTROL_TRACES}"
+  else
+    LENGTH_HINTS="none"
+  fi
+fi
 
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 export SCIENCE_TRAIN_PATH SCIENCE_EVAL_PATH
@@ -44,7 +64,6 @@ for required in \
   "${PYTHON}" \
   "${ACCELERATE}" \
   "${TRAIN_TRACES}" \
-  "${LENGTH_HINTS}" \
   "${HASH_CONFIG}" \
   "${TEACHER_ADAPTER}" \
   "${SFT_ADAPTER}/adapter_config.json"; do
@@ -59,16 +78,24 @@ declare -a target_specs=(
 
 mkdir -p "${RESULTS_ROOT}/pairs" "${RESULTS_ROOT}/targets"
 read -r -a seeds <<< "${TEACHER_RESAMPLE_SEEDS}"
+result_suffix=""
+if [[ "${TEACHER_RESAMPLE_EXAMPLES}" -ne 1000 ]]; then
+  result_suffix="_n${TEACHER_RESAMPLE_EXAMPLES}"
+fi
 
 for seed in "${seeds[@]}"; do
-  if [[ "${seed}" == "43" && -f "${LEGACY_SEED43_TRACES}" ]]; then
+  use_legacy_seed43=0
+  if [[ "${seed}" == "43" ]] &&
+    has_requested_rows "${LEGACY_SEED43_TRACES}" &&
+    [[ -s "${LEGACY_SEED43_METADATA}" ]]; then
     traces="${LEGACY_SEED43_TRACES}"
+    use_legacy_seed43=1
   else
-    trace_dir="${RESULTS_ROOT}/traces/seed${seed}"
+    trace_dir="${RESULTS_ROOT}/traces/seed${seed}${result_suffix}"
     traces="${trace_dir}/traces.jsonl"
     metadata="${trace_dir}/metadata.json"
     mkdir -p "${trace_dir}"
-    if [[ ! -s "${traces}" || ! -s "${metadata}" ]]; then
+    if ! has_requested_rows "${traces}" || [[ ! -s "${metadata}" ]]; then
       "${ACCELERATE}" launch \
         --config_file "${REPO_ROOT}/accelerate_config.yaml" \
         --num_processes "${ACC_NUM_PROCS}" \
@@ -98,7 +125,7 @@ for seed in "${seeds[@]}"; do
     fi
   fi
 
-  pair_report="${RESULTS_ROOT}/pairs/seed${seed}.json"
+  pair_report="${RESULTS_ROOT}/pairs/seed${seed}${result_suffix}.json"
   "${PYTHON}" "${REPO_ROOT}/scripts/check_paired_traces.py" \
     --right-is-prefix \
     --expected-left-seed 42 \
@@ -113,7 +140,8 @@ for seed in "${seeds[@]}"; do
       exit 2
     }
     target_root="${RESULTS_ROOT}/targets/${target_name}"
-    mkdir -p "${target_root}/seed${seed}"
+    seed_result_dir="${target_root}/seed${seed}${result_suffix}"
+    mkdir -p "${seed_result_dir}"
     "${PYTHON}" - "${target_root}/target.json" "${target_label}" "${adapter}" <<'PY'
 import json
 import sys
@@ -131,9 +159,9 @@ PY
       "${adapter}/adapter_config.json")"
 
     for mode in open closed; do
-      output="${target_root}/seed${seed}/watermark_${mode}.json"
+      output="${seed_result_dir}/watermark_${mode}.json"
       [[ -s "${output}" ]] && continue
-      if [[ "${seed}" == "43" ]]; then
+      if [[ "${use_legacy_seed43}" -eq 1 ]]; then
         if [[ "${target_name}" == "sft-lambda16" ]]; then
           existing="${EXPERIMENT_DIR}/metrics/${STUDENT_TAG_OVERRIDE}_ads-lambda16_lr5e-05_e1/watermark_${mode}_unsupervised.json"
         elif [[ "${target_name}" == opd-control-* ]]; then
@@ -172,5 +200,6 @@ done
 "${PYTHON}" "${REPO_ROOT}/scripts/summarize_teacher_seed_robustness.py" \
   --results-root "${RESULTS_ROOT}" \
   --seeds "${seeds[@]}" \
+  --expected-examples "${TEACHER_RESAMPLE_EXAMPLES}" \
   --output "${RESULTS_ROOT}/verified_complete.json" \
   --markdown "${RESULTS_ROOT}/results.md"
