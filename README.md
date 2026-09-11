@@ -11,7 +11,7 @@ Core ADFP stages are adapted from `YixuanEvenXu/antidistillation-fingerprinting`
 3. Start both OPD arms from the same λ16 student checkpoint:
    - control teacher: ordinary science-SFT Qwen3.5-9B logits;
    - fingerprinted teacher: the same teacher with ADFP λ16 applied online to its logits.
-4. Evaluate science utility at OPD steps 25, 50, 75, 100, and 125, then compare utility and fingerprint detection between the two arms.
+4. At OPD steps 25, 50, 75, 100, and 125, evaluate science utility plus all four ADFP detectors (white/black-box × known/independent traces).
 
 
 ## Data
@@ -80,6 +80,7 @@ Each stage is resumable and writes generated checkpoints, logs, and evaluations 
 | GPUs | 8 |
 | Policy exports | every 25 steps |
 | Full checkpoints | every 10 steps, keep 2 |
+| Per-export evaluation | 1,000 science questions + four ADFP detector variants |
 
 The OPD reward is the dense token-level teacher/student log-probability difference. Stored teacher responses are not OPD targets: the student generates fresh reasoning traces and the teacher scores those generated tokens.
 
