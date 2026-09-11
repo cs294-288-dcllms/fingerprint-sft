@@ -12,6 +12,7 @@ Core ADFP stages are adapted from `YixuanEvenXu/antidistillation-fingerprinting`
    - control teacher: ordinary science-SFT Qwen3.5-9B logits;
    - fingerprinted teacher: the same teacher with ADFP λ16 applied online to its logits.
 4. At OPD steps 25, 50, 75, 100, and 125, evaluate science utility plus all four ADFP detectors (white/black-box × exact seed-42 traces and same-prompt seed-43 teacher samples).
+5. On the final SFT and OPD checkpoints, repeat the same-prompt teacher test with seeds 43, 44, 45, and 46 without retraining the student.
 
 
 ## Data
@@ -53,6 +54,15 @@ Run both OPD arms sequentially:
 ```
 
 Each stage is resumable and writes generated checkpoints, logs, and evaluations under ignored `outputs/`.
+
+After OPD, evaluate sensitivity to the teacher's sampling seed:
+
+```bash
+./scripts/run_teacher_seed_robustness.sh
+```
+
+This reuses the same 1,000 prompts for every seed and writes a compact
+white-box/black-box table under `teacher_seed_robustness/results.md`.
 
 ## OPD configuration
 
