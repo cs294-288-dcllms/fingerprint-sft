@@ -67,7 +67,8 @@ Each stage is resumable and writes generated checkpoints, logs, and evaluations 
 | Trajectories per update | 288 |
 | Training steps | 125 |
 | Policy mini-batch size | 72 |
-| Per-GPU micro-batch | 2 forward / 2 train |
+| Control per-GPU micro-batch | 4 forward / 4 train |
+| ADFP-teacher per-GPU micro-batch | 2 forward / 2 train |
 | Update epochs per batch | 1 |
 | Learning rate | `1e-5` |
 | Warmup steps | 5 |
