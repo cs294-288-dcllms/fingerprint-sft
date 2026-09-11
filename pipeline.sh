@@ -4,7 +4,7 @@ set -euo pipefail
 # ----------------------------------------------------------------------------
 # End-to-end watermark pipeline orchestrator (radioactive vs ADS)
 # Runs all four evaluations: (open/closed) x (supervised/unsupervised)
-# using shared hashing and independent training/evaluation trace sets.
+# using shared hashing: exact training traces plus new teacher samples on the same prompts.
 # ----------------------------------------------------------------------------
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -298,7 +298,7 @@ run_stage "Stage 1 – Teacher Generation (train traces)" "$SENTINELS_DIR/stage1
     "${ACC_CMD[@]}" --num_processes "${ACC_NUM_PROCS}" stages/stage1_generate.py "${stage1_train_args[@]}"
 
 # ----------------------------------------------------------------------------
-# Stage 1 – alternative traces for unsupervised eval
+# Stage 1 – same-prompt teacher resampling for cross-seed eval
 # ----------------------------------------------------------------------------
 stage1_alt_args=(
     --dataset "$DATASET"
@@ -327,8 +327,16 @@ if [[ "$METHOD" == "radioactive" ]]; then
 elif [[ "$METHOD" == "ads" ]]; then
     stage1_alt_args+=(--lam "$LAMBDA")
 fi
-run_stage "Stage 1 – Teacher Generation (alt traces)" "$SENTINELS_DIR/stage1_alt_${method_label}_seed${ALT_SEED}_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE1_ALT:-0}" \
+run_stage "Stage 1 – Teacher Generation (same prompts, new seed)" "$SENTINELS_DIR/stage1_alt_${method_label}_seed${ALT_SEED}_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE1_ALT:-0}" \
     "${ACC_CMD[@]}" --num_processes "${ACC_NUM_PROCS}" stages/stage1_generate.py "${stage1_alt_args[@]}"
+
+SAME_PROMPT_PAIR_REPORT="${ALT_TRACES_DIR}/same_prompt_teacher_seed_pair.json"
+"${PY_CMD[@]}" scripts/check_paired_traces.py \
+    --right-is-prefix \
+    --expected-left-seed "${TRAIN_SEED}" \
+    --expected-right-seed "${ALT_SEED}" \
+    --output "${SAME_PROMPT_PAIR_REPORT}" \
+    "${TRAIN_TRACES_JSONL}" "${ALT_TRACES_JSONL}"
 
 # ----------------------------------------------------------------------------
 # Stage 2 – teacher eval on training traces
@@ -351,10 +359,10 @@ else
 fi
 
 # ----------------------------------------------------------------------------
-# Stage 2 – teacher eval on alternative traces
+# Stage 2 – teacher eval on same-prompt resampled traces
 # ----------------------------------------------------------------------------
 if [[ "$DATASET" == "gsm8k" || "$DATASET" == "oasst1" || "$DATASET" == "science" ]]; then
-    run_stage "Stage 2 – Teacher Eval (alt traces)" "$SENTINELS_DIR/stage2_alt_${method_label}_seed${ALT_SEED}_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE2_ALT:-0}" \
+    run_stage "Stage 2 – Teacher Eval (same prompts, new seed)" "$SENTINELS_DIR/stage2_alt_${method_label}_seed${ALT_SEED}_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE2_ALT:-0}" \
         "${ACC_CMD[@]}" --num_processes "${ACC_NUM_PROCS}" stages/stage2_teacher_eval.py \
         --traces "$ALT_TRACES_JSONL" \
         --teacher-model "$TEACHER_MODEL" \
@@ -435,7 +443,7 @@ run_stage "Stage 4 – Watermark Eval (closed, supervised)" "$SENTINELS_DIR/stag
     --seed "$TRAIN_SEED" \
     --dataset "$DATASET"
 
-run_stage "Stage 4 – Watermark Eval (open, unsupervised)" "$SENTINELS_DIR/stage4_open_unsup_${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE4_OPEN_UNSUP:-0}" \
+run_stage "Stage 4 – Watermark Eval (open, same prompts, new teacher seed)" "$SENTINELS_DIR/stage4_open_unsup_${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE4_OPEN_UNSUP:-0}" \
     "${ACC_CMD[@]}" --num_processes "${ACC_NUM_PROCS}" stages/stage4_watermark_eval.py \
     --traces "$ALT_TRACES_JSONL" \
     --hash-config "$HASH_CFG" \
@@ -453,7 +461,7 @@ run_stage "Stage 4 – Watermark Eval (open, unsupervised)" "$SENTINELS_DIR/stag
     --seed "$ALT_SEED" \
     --dataset "$DATASET"
 
-run_stage "Stage 4 – Watermark Eval (closed, unsupervised)" "$SENTINELS_DIR/stage4_closed_unsup_${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE4_CLOSED_UNSUP:-0}" \
+run_stage "Stage 4 – Watermark Eval (closed, same prompts, new teacher seed)" "$SENTINELS_DIR/stage4_closed_unsup_${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}_n${ALT_NUM_EXAMPLES}.done" "${FORCE_STAGE4_CLOSED_UNSUP:-0}" \
     "${ACC_CMD[@]}" --num_processes "${ACC_NUM_PROCS}" stages/stage4_watermark_eval.py \
     --traces "$ALT_TRACES_JSONL" \
     --hash-config "$HASH_CFG" \

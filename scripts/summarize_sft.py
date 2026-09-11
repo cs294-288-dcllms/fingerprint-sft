@@ -21,8 +21,8 @@ VARIANTS = (
 LABELS = {
     "open_supervised": "white-box / known traces",
     "closed_supervised": "black-box / known traces",
-    "open_unsupervised": "white-box / independent traces",
-    "closed_unsupervised": "black-box / independent traces",
+    "open_unsupervised": "white-box / same prompts, teacher seed 43",
+    "closed_unsupervised": "black-box / same prompts, teacher seed 43",
 }
 
 
@@ -50,12 +50,17 @@ def main() -> None:
     lines = [
         "# SFT fingerprint evaluation",
         "",
-        "| Condition | Science accuracy | White-box known | Black-box known | White-box independent | Black-box independent |",
+        (
+            "| Condition | Science accuracy | White-box known | Black-box known | "
+            "White-box same prompts, seed 43 | Black-box same prompts, seed 43 |"
+        ),
         "|---|---:|---:|---:|---:|---:|",
     ]
     for condition in CONDITIONS:
         artifact = f"{args.student_tag}_{condition}_lr{lr_tag}_e{args.epochs}"
-        utility = read_json(args.exp_dir / "utility_evals" / UTILITY_DIRS[condition] / "student.summary.json")
+        utility = read_json(
+            args.exp_dir / "utility_evals" / UTILITY_DIRS[condition] / "student.summary.json"
+        )
         metrics: dict[str, Any] = {}
         values = []
         for variant in VARIANTS:

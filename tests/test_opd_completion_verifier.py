@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 STEPS = (25, 50, 75, 100, 125)
 VARIANTS = (
     ("open", "supervised"),
@@ -17,6 +16,23 @@ VARIANTS = (
 
 
 def _write_completed_step(root: Path, step: int) -> None:
+    pair_report = root / "fingerprint_evals" / "same_prompt_teacher_seed_pair.json"
+    pair_report.parent.mkdir(parents=True, exist_ok=True)
+    pair_report.write_text(
+        json.dumps(
+            {
+                "paired_prompts": 1000,
+                "prompt_mismatches": 0,
+                "solution_mismatches": 0,
+                "different_teacher_responses": 1000,
+                "baseline_teacher_seed": 42,
+                "resampled_teacher_seed": 43,
+                "prompt_sha256": "a" * 64,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     policy = root / "exports" / f"global_step_{step}" / "policy"
     evaluation = root / "utility_evals" / f"global_step_{step}"
     policy.mkdir(parents=True)
@@ -27,7 +43,7 @@ def _write_completed_step(root: Path, step: int) -> None:
         encoding="utf-8",
     )
     metrics = root / "fingerprint_evals" / f"global_step_{step}"
-    metrics.mkdir(parents=True)
+    metrics.mkdir(parents=True, exist_ok=True)
     for mode, supervision in VARIANTS:
         (metrics / f"watermark_{mode}_{supervision}.json").write_text(
             json.dumps(
@@ -101,13 +117,24 @@ def test_verifier_fails_when_a_fingerprint_evaluation_is_missing(
     for step in STEPS:
         _write_completed_step(tmp_path, step)
     (
-        tmp_path
-        / "fingerprint_evals"
-        / "global_step_50"
-        / "watermark_closed_unsupervised.json"
+        tmp_path / "fingerprint_evals" / "global_step_50" / "watermark_closed_unsupervised.json"
     ).unlink()
 
     result = _run_verifier(repo_root, tmp_path)
 
     assert result.returncode != 0
     assert "Missing fingerprint evaluation for global step 50" in result.stderr
+
+
+def test_verifier_fails_when_same_prompt_seed_provenance_is_missing(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    for step in STEPS:
+        _write_completed_step(tmp_path, step)
+    (tmp_path / "fingerprint_evals" / "same_prompt_teacher_seed_pair.json").unlink()
+
+    result = _run_verifier(repo_root, tmp_path)
+
+    assert result.returncode != 0
+    assert "Missing same-prompt teacher-seed provenance" in result.stderr

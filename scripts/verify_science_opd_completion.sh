@@ -7,6 +7,25 @@ SFT_CONDA_ENV_PREFIX="${SFT_CONDA_ENV_PREFIX:-${ROOT_DIR}/outputs/conda/fingerpr
 EXPECTED_STEPS="${OPD_EXPECTED_EXPORT_STEPS:-25 50 75 100 125}"
 VARIANTS="open_supervised closed_supervised open_unsupervised closed_unsupervised"
 MANIFEST="${OPD_ROOT}/verified_complete.json"
+PAIR_REPORT="${OPD_ROOT}/fingerprint_evals/same_prompt_teacher_seed_pair.json"
+
+[[ -f "${PAIR_REPORT}" ]] || {
+  echo "Missing same-prompt teacher-seed provenance: ${PAIR_REPORT}" >&2
+  exit 1
+}
+"${SFT_CONDA_ENV_PREFIX}/bin/python" - "${PAIR_REPORT}" <<PY
+import json
+import sys
+
+report = json.load(open(sys.argv[1], encoding="utf-8"))
+assert report.get("paired_prompts") == 1000
+assert report.get("prompt_mismatches") == 0
+assert report.get("solution_mismatches") == 0
+assert int(report.get("different_teacher_responses", 0)) > 0
+assert report.get("baseline_teacher_seed") == 42
+assert report.get("resampled_teacher_seed") == 43
+assert isinstance(report.get("prompt_sha256"), str) and len(report["prompt_sha256"]) == 64
+PY
 
 for step in ${EXPECTED_STEPS}; do
   policy="${OPD_ROOT}/exports/global_step_${step}/policy/adapter_config.json"

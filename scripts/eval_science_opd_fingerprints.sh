@@ -23,6 +23,14 @@ for required in \
 done
 
 mkdir -p "${METRICS_ROOT}"
+PAIR_REPORT="${METRICS_ROOT}/same_prompt_teacher_seed_pair.json"
+"${SFT_CONDA_ENV_PREFIX}/bin/python" \
+  "${REPO_ROOT}/scripts/check_paired_traces.py" \
+  --right-is-prefix \
+  --expected-left-seed 42 \
+  --expected-right-seed 43 \
+  --output "${PAIR_REPORT}" \
+  "${TRAIN_TRACES}" "${ALT_TRACES}"
 while IFS= read -r policy; do
   export_step="$(basename "$(dirname "${policy}")")"
   metrics_dir="${METRICS_ROOT}/${export_step}"
