@@ -15,6 +15,26 @@ ANSWER_PATTERN = re.compile(
 )
 
 
+def configure_runtime_caches() -> dict[str, Path]:
+    """Create writable accelerator caches before importing Torch/FLA."""
+    runtime_root = Path(
+        os.environ.get("RUNTIME_CACHE_ROOT")
+        or os.environ.get("TMPDIR")
+        or "/tmp"
+    ) / "fingerprint-sft"
+    defaults = {
+        "TRITON_CACHE_DIR": runtime_root / "triton",
+        "TORCHINDUCTOR_CACHE_DIR": runtime_root / "torchinductor",
+        "CUDA_CACHE_PATH": runtime_root / "cuda",
+    }
+    configured: dict[str, Path] = {}
+    for variable, default in defaults.items():
+        path = Path(os.environ.setdefault(variable, str(default)))
+        path.mkdir(parents=True, exist_ok=True)
+        configured[variable] = path
+    return configured
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Evaluate base/LoRA models on the Science MCQ split."
@@ -190,6 +210,7 @@ def _validate_complete_predictions(
 
 def main() -> None:
     args = parse_args()
+    configure_runtime_caches()
     try:
         import torch
     except ImportError as exc:

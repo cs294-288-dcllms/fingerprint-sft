@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "eval_science_mcq.py"
 SPEC = importlib.util.spec_from_file_location("eval_science_mcq", SCRIPT)
@@ -32,6 +35,24 @@ class EvalScienceMcqTest(unittest.TestCase):
             MODULE._validate_complete_predictions([rows[1]], 2)
         with self.assertRaisesRegex(RuntimeError, r"duplicate_indices=\[0\]"):
             MODULE._validate_complete_predictions([rows[1], rows[1]], 2)
+
+    def test_runtime_caches_are_created_before_model_import(self) -> None:
+        cache_variables = (
+            "TRITON_CACHE_DIR",
+            "TORCHINDUCTOR_CACHE_DIR",
+            "CUDA_CACHE_PATH",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.dict(
+                os.environ,
+                {"RUNTIME_CACHE_ROOT": temporary},
+                clear=False,
+            ):
+                for variable in cache_variables:
+                    os.environ.pop(variable, None)
+                configured = MODULE.configure_runtime_caches()
+                self.assertEqual(set(configured), set(cache_variables))
+                self.assertTrue(all(path.is_dir() for path in configured.values()))
 
 
 if __name__ == "__main__":

@@ -23,11 +23,21 @@ LOG_DIR="${OPD_OUTPUT_DIR}/logs"
 EVAL_DIR="${OPD_OUTPUT_DIR}/utility_evals"
 STATUS_FILE="${OPD_OUTPUT_DIR}/status"
 COMPLETE_FILE="${OPD_OUTPUT_DIR}/complete"
+VERIFIED_FILE="${OPD_OUTPUT_DIR}/verified_complete.json"
 
-mkdir -p "${OPD_OUTPUT_DIR}" "${CKPT_DIR}" "${EXPORT_DIR}" "${LOG_DIR}" "${EVAL_DIR}" "${OPD_RAY_TMPDIR}" "${OPD_RUNTIME_DIR}/triton"
+mkdir -p \
+  "${OPD_OUTPUT_DIR}" \
+  "${CKPT_DIR}" \
+  "${EXPORT_DIR}" \
+  "${LOG_DIR}" \
+  "${EVAL_DIR}" \
+  "${OPD_RAY_TMPDIR}" \
+  "${OPD_RUNTIME_DIR}/triton" \
+  "${OPD_RUNTIME_DIR}/torchinductor" \
+  "${OPD_RUNTIME_DIR}/cuda"
 
-if [[ -f "${COMPLETE_FILE}" ]]; then
-  echo "OPD arm already complete: ${OPD_RUN_NAME}"
+if [[ -f "${VERIFIED_FILE}" ]]; then
+  echo "OPD arm already verified: ${OPD_RUN_NAME}"
   exit 0
 fi
 
@@ -81,27 +91,59 @@ export TOKENIZERS_PARALLELISM=false
 export SKYRL_FORCE_EAGER_LORA="${SKYRL_FORCE_EAGER_LORA:-1}"
 export TMPDIR="${OPD_RUNTIME_DIR}"
 export TRITON_CACHE_DIR="${OPD_RUNTIME_DIR}/triton"
+export TORCHINDUCTOR_CACHE_DIR="${OPD_RUNTIME_DIR}/torchinductor"
+export CUDA_CACHE_PATH="${OPD_RUNTIME_DIR}/cuda"
 export RAY_TMPDIR="${OPD_RAY_TMPDIR}"
 export RAY_CGRAPH_get_timeout="${RAY_CGRAPH_get_timeout:-1800}"
 export PYTHONPATH="${REPO_ROOT}:${SKYRL_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
-entrypoint="examples.train.on_policy_distillation.main_on_policy_distill"
-if [[ "${OPD_TEACHER_MODE}" == "adfp" ]]; then
-  entrypoint="scripts.main_on_policy_distill_adfp"
-  export SKYRL_ADFP_TEACHER_ENABLED=1
-  export SKYRL_ADFP_TEACHER_PATH="${OPD_TEACHER_MERGED}"
-  export SKYRL_ADFP_PROXY_MODEL="${PROXY_MODEL}"
-  export SKYRL_ADFP_HASH_CONFIG="${OPD_HASH_CONFIG}"
-  export SKYRL_ADFP_LAMBDA="${OPD_ADFP_LAMBDA}"
-  export SKYRL_ADFP_POSITION_CHUNK="${OPD_ADFP_POSITION_CHUNK}"
-else
-  unset SKYRL_ADFP_TEACHER_ENABLED
+if [[ -z "${OPD_EXPECTED_EXPORT_STEPS:-}" ]]; then
+  expected_steps=()
+  for ((step = OPD_EXPORT_INTERVAL; step <= OPD_MAX_TRAINING_STEPS; step += OPD_EXPORT_INTERVAL)); do
+    expected_steps+=("${step}")
+  done
+  OPD_EXPECTED_EXPORT_STEPS="${expected_steps[*]}"
+  export OPD_EXPECTED_EXPORT_STEPS
 fi
 
-write_status running "${OPD_MAX_TRAINING_STEPS} OPD steps"
-(
-  cd "${SKYRL_DIR}"
-  "${SKYRL_CONDA_ENV_PREFIX}/bin/python" -m "${entrypoint}" \
+training_ready=0
+latest_checkpoint=""
+if [[ -f "${CKPT_DIR}/latest_ckpt_global_step.txt" ]]; then
+  latest_checkpoint="$(tr -d '[:space:]' < "${CKPT_DIR}/latest_ckpt_global_step.txt")"
+fi
+if [[ "${latest_checkpoint}" == "${OPD_MAX_TRAINING_STEPS}" ]]; then
+  training_ready=1
+  for step in ${OPD_EXPECTED_EXPORT_STEPS}; do
+    if [[ ! -s "${EXPORT_DIR}/global_step_${step}/policy/adapter_model.safetensors" ||
+          ! -s "${EXPORT_DIR}/global_step_${step}/policy/adapter_config.json" ]]; then
+      training_ready=0
+      echo "Completed checkpoint is missing the required global-step-${step} export." >&2
+      exit 1
+    fi
+  done
+fi
+
+if [[ "${training_ready}" == "1" ]]; then
+  write_status evaluating "resuming evaluation from completed step ${latest_checkpoint}"
+  echo "Reusing completed OPD training for ${OPD_RUN_NAME}; resuming evaluations."
+else
+  entrypoint="examples.train.on_policy_distillation.main_on_policy_distill"
+  if [[ "${OPD_TEACHER_MODE}" == "adfp" ]]; then
+    entrypoint="scripts.main_on_policy_distill_adfp"
+    export SKYRL_ADFP_TEACHER_ENABLED=1
+    export SKYRL_ADFP_TEACHER_PATH="${OPD_TEACHER_MERGED}"
+    export SKYRL_ADFP_PROXY_MODEL="${PROXY_MODEL}"
+    export SKYRL_ADFP_HASH_CONFIG="${OPD_HASH_CONFIG}"
+    export SKYRL_ADFP_LAMBDA="${OPD_ADFP_LAMBDA}"
+    export SKYRL_ADFP_POSITION_CHUNK="${OPD_ADFP_POSITION_CHUNK}"
+  else
+    unset SKYRL_ADFP_TEACHER_ENABLED
+  fi
+
+  write_status running "${OPD_MAX_TRAINING_STEPS} OPD steps"
+  (
+    cd "${SKYRL_DIR}"
+    "${SKYRL_CONDA_ENV_PREFIX}/bin/python" -m "${entrypoint}" \
     "data.train_data=['${OPD_DATA_DIR}/train.parquet']" \
     "data.val_data=['${OPD_DATA_DIR}/validation.parquet']" \
     trainer.algorithm.advantage_estimator=no_op \
@@ -162,8 +204,9 @@ write_status running "${OPD_MAX_TRAINING_STEPS} OPD steps"
     trainer.max_ckpts_to_keep="${OPD_MAX_CHECKPOINTS}" \
     "trainer.export_path=${EXPORT_DIR}" \
     trainer.hf_save_interval="${OPD_EXPORT_INTERVAL}" \
-    2>&1 | tee -a "${LOG_DIR}/train.log"
-)
+      2>&1 | tee -a "${LOG_DIR}/train.log"
+  )
+fi
 
 write_status evaluating "evaluating every ${OPD_EXPORT_INTERVAL}-step export"
 latest_policy=""
