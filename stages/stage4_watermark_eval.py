@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
@@ -52,6 +53,17 @@ def _build_metric_provenance(
         "student_lora_dir": str(cfg.lora_dir.resolve()),
         "seed": int(cfg.seed),
     }
+
+
+DETECTION_ALPHA = 0.05
+P_VALUE_FLOOR = 1e-300
+
+
+def _one_sided_hoeffding_pvalue(mean: float, count: int, gamma: float) -> float:
+    """Return the one-sided Hoeffding-bound p-value for ADFP detection."""
+    if count <= 0 or mean <= gamma:
+        return 1.0
+    return max(P_VALUE_FLOOR, math.exp(-2.0 * count * (mean - gamma) ** 2))
 
 
 def _effective_batch_size(
@@ -612,6 +624,19 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
                 "mode": cfg.mode,
                 "supervision": cfg.supervision,
             }
+        p_value = _one_sided_hoeffding_pvalue(
+            float(payload["mean"]),
+            int(payload["num_measurements"]),
+            hash_cfg.gamma,
+        )
+        payload.update(
+            {
+                "gamma": hash_cfg.gamma,
+                "p_value": p_value,
+                "detection_alpha": DETECTION_ALPHA,
+                "detected_at_0_05": p_value < DETECTION_ALPHA,
+            }
+        )
         payload.update(_build_metric_provenance(cfg, len(traces)))
         write_json(cfg.output_path, payload)
         for shard in tmp_dir.glob("rank_*.jsonl"):

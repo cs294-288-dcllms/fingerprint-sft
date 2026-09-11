@@ -31,7 +31,7 @@ for step in ${EXPECTED_STEPS}; do
     mode="${variant%%_*}"
     supervision="${variant#*_}"
     "${SFT_CONDA_ENV_PREFIX}/bin/python" -c \
-      'import json,sys; d=json.load(open(sys.argv[1])); assert d.get("mode")==sys.argv[2]; assert d.get("supervision")==sys.argv[3]; assert d.get("dataset")=="science"; assert int(d.get("trace_examples",0))>0; assert int(d.get("num_measurements",0))>0; assert 0.0<=float(d["mean"])<=1.0' \
+      'import json,math,sys; d=json.load(open(sys.argv[1])); assert d.get("mode")==sys.argv[2]; assert d.get("supervision")==sys.argv[3]; assert d.get("dataset")=="science"; assert int(d.get("trace_examples",0))>0; n=int(d.get("num_measurements",0)); assert n>0; mean=float(d["mean"]); assert 0.0<=mean<=1.0; gamma=float(d["gamma"]); assert 0.0<gamma<1.0; expected=1.0 if mean<=gamma else max(1e-300,math.exp(-2.0*n*(mean-gamma)**2)); assert math.isclose(float(d["p_value"]),expected,rel_tol=1e-12,abs_tol=1e-300); assert float(d.get("detection_alpha"))==0.05; assert d.get("detected_at_0_05") is (expected<0.05)' \
       "${metric}" "${mode}" "${supervision}"
   done
 done

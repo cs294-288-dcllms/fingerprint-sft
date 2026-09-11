@@ -38,6 +38,10 @@ def _write_completed_step(root: Path, step: int) -> None:
                     "trace_examples": 1000,
                     "num_measurements": 10,
                     "mean": 0.5,
+                    "gamma": 0.5,
+                    "p_value": 1.0,
+                    "detection_alpha": 0.05,
+                    "detected_at_0_05": False,
                 }
             )
             + "\n",

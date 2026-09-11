@@ -17,6 +17,7 @@ from stages.stage4_watermark_eval import (
     _filter_first_occurrences,
     _has_identity_token_mapping,
     _load_stage4_checkpoint,
+    _one_sided_hoeffding_pvalue,
     _validate_stage4_completion,
 )
 
@@ -55,6 +56,13 @@ class Stage4BatchGuardTest(unittest.TestCase):
                 str(adapter.resolve()),
             )
             self.assertEqual(provenance["seed"], 43)
+
+    def test_one_sided_detection_uses_full_measurement_count(self) -> None:
+        self.assertAlmostEqual(
+            _one_sided_hoeffding_pvalue(0.5019771408564205, 884497, 0.5),
+            0.000992632930297,
+        )
+        self.assertEqual(_one_sided_hoeffding_pvalue(0.49, 1_000_000, 0.5), 1.0)
 
     def test_left_padding_preserves_actual_token_positions(self) -> None:
         offsets = [(0, 0), (0, 0), (0, 1), (1, 3), (3, 6)]
