@@ -4,6 +4,8 @@ Reproducible code, configs, and the fixed science split for testing whether an A
 
 Core ADFP stages are adapted from `YixuanEvenXu/antidistillation-fingerprinting` at commit `a05ad2bf6624b6c7d1ecf8064349f6e71035fc1e`. OPD uses SkyRL at commit `02a2b53a4142d07a38abf67f9ed7840522ee16ed`.
 
+Completed experiment results are summarized in [`RESULTS.md`](RESULTS.md).
+
 ## Experiment plan
 
 1. Fine-tune Qwen3.5-9B on 9,000 Mixture-of-Thoughts science reasoning traces and validate it on the fixed 1,000-question split.
@@ -110,9 +112,11 @@ Configuration files:
 
 - `configs/science-qwen35.env`: shared models, data, and SFT settings.
 - `configs/strategies/adfp-lambda16.env`: λ16 SFT student.
+- `configs/strategies/adfp-paper-lambda256.env`: paper-style λ256 SFT settings.
 - `configs/opd/common.env`: shared OPD hyperparameters.
 - `configs/opd/control-teacher.env`: ordinary-teacher OPD arm.
 - `configs/opd/adfp-teacher-lambda16.env`: online ADFP-teacher OPD arm.
+- `configs/opd/adfp-teacher-lambda256.env`: λ256 ADFP-teacher OPD settings; use only after the teacher-utility and student-utility gates pass.
 
 ## Tests
 
