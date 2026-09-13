@@ -93,13 +93,14 @@ the student SFT seed changes.
 | Student SFT seed | Open GTP | Open ln p | Open p | Closed GTP | Closed ln p | Closed p | Accuracy |
 |---:|---:|---:|---:|---:|---:|---:|---:|
 | 42 | 50.2131% | -5.506 | **0.00406** | 50.2333% | -6.601 | **0.00136** | 17.5% |
-| 43 | 50.2140% | -5.554 | **0.00387** | 50.2264% | -6.214 | **0.00200** | evaluating |
+| 43 | 50.2140% | -5.554 | **0.00387** | 50.2264% | -6.214 | **0.00200** | 17.8% |
 
 Different-seed detection succeeds at `p < 0.01` for both open- and
 closed-weight tests in **2/2 independent student SFT runs**. The mean ln p
-over these two runs is -5.530 open and -6.408 closed, compared with the
-paper's -4.013 and -3.478. More student seeds are running to test whether this
-holds across the paper's full 10-run protocol.
+over these two runs is -5.530 ± 0.047 open and -6.408 ± 0.386 closed
+(`2×SEM`), compared with the paper's -4.013 ± 1.054 and -3.478 ± 1.206.
+Mean student accuracy is 17.6% ± 0.3 (`2×SEM`). More student seeds are running
+to test whether this holds across the paper's full 10-run protocol.
 
 These results reproduce the paper's central different-seed detectability
 claim for two Qwen3.5 science students. They do not yet reproduce its full
@@ -142,5 +143,5 @@ different-seed detection.
 - Unfingerprinted controls remain undetected.
 - The paper's full 10-run robustness test is still in progress.
 - Utility is the unresolved gap: teacher answer-forced accuracy falls from
-  65.41% to 46.18%, and student accuracy falls from 33.0% to 17.5% under the
-  matched paper-hyperparameter comparison.
+  65.41% to 46.18%, and the two λ256 students average 17.6% accuracy versus
+  33.0% for the matched unfingerprinted control.
