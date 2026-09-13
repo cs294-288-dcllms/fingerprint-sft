@@ -98,9 +98,9 @@ the student SFT seed changes.
 
 Different-seed detection succeeds at `p < 0.01` for both open- and
 closed-weight tests in **3/3 independent student SFT runs**. The mean ln p
-over these three runs is -5.547 ± 0.043 open and -6.861 ± 0.934 closed
-(`2×SEM`), compared with the paper's -4.013 ± 1.054 and -3.478 ± 1.206.
-Mean student accuracy is 17.7% ± 0.2 (`2×SEM`). More student seeds are running
+over these three runs is -5.547 ± 0.043 open and -6.861 ± 0.915 closed
+(`1.96×SEM`), compared with the paper's -4.013 ± 1.054 and -3.478 ± 1.206.
+Mean student accuracy is 17.7% ± 0.2 (`1.96×SEM`). More student seeds are running
 to test whether this holds across the paper's full 10-run protocol.
 
 These results reproduce the paper's central different-seed detectability
