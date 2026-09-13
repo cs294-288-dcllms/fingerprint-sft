@@ -77,16 +77,33 @@ contexts.
 
 The [ADFP paper](https://arxiv.org/abs/2602.03812) reports the following
 different-seed results for its original λ256 LoRA setting. Paper values are
-means over 10 student runs; this science result is one student run.
+means over 10 student runs.
 
-| Different-seed detector | Paper mean ln p | Qwen3.5 science ln p |
+| Different-seed detector | Paper mean ln p | Qwen3.5 science, seed 42 |
 |---|---:|---:|
 | Open-weight | -4.013 ± 1.054 | **-5.506** |
 | Closed-weight | -3.478 ± 1.206 | **-6.601** |
 
-The single Qwen3.5 run reproduces different-seed detectability numerically.
-It does not reproduce the paper's repeated-run evidence or its low utility
-loss.
+### Repeated student-seed validation
+
+Both students use the same seed-42 fingerprinted training traces and are
+tested against the same independently sampled seed-43 teacher traces. Only
+the student SFT seed changes.
+
+| Student SFT seed | Open GTP | Open ln p | Open p | Closed GTP | Closed ln p | Closed p | Accuracy |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 42 | 50.2131% | -5.506 | **0.00406** | 50.2333% | -6.601 | **0.00136** | 17.5% |
+| 43 | 50.2140% | -5.554 | **0.00387** | 50.2264% | -6.214 | **0.00200** | evaluating |
+
+Different-seed detection succeeds at `p < 0.01` for both open- and
+closed-weight tests in **2/2 independent student SFT runs**. The mean ln p
+over these two runs is -5.530 open and -6.408 closed, compared with the
+paper's -4.013 and -3.478. More student seeds are running to test whether this
+holds across the paper's full 10-run protocol.
+
+These results reproduce the paper's central different-seed detectability
+claim for two Qwen3.5 science students. They do not yet reproduce its full
+10-run evidence or its low utility loss.
 
 ## ADFP λ16 SFT
 
@@ -119,10 +136,11 @@ different-seed detection.
 
 - The verified λ256 student is strongly detected on known traces.
 - The λ256 fingerprint is also detected on independently sampled,
-  same-prompt teacher traces: open `p=0.00406`, closed `p=0.00136`.
+  same-prompt teacher traces in 2/2 student runs.
+- Seed 42: open `p=0.00406`, closed `p=0.00136`.
+- Seed 43: open `p=0.00387`, closed `p=0.00200`.
 - Unfingerprinted controls remain undetected.
-- This is one positive different-seed run; the paper's 10-run robustness has
-  not yet been reproduced.
+- The paper's full 10-run robustness test is still in progress.
 - Utility is the unresolved gap: teacher answer-forced accuracy falls from
   65.41% to 46.18%, and student accuracy falls from 33.0% to 17.5% under the
   matched paper-hyperparameter comparison.
