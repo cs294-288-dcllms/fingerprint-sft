@@ -86,7 +86,7 @@ means over 10 student runs.
 
 ### Repeated student-seed validation
 
-Both students use the same seed-42 fingerprinted training traces and are
+All students use the same seed-42 fingerprinted training traces and are
 tested against the same independently sampled seed-43 teacher traces. Only
 the student SFT seed changes.
 
@@ -94,16 +94,17 @@ the student SFT seed changes.
 |---:|---:|---:|---:|---:|---:|---:|---:|
 | 42 | 50.2131% | -5.506 | **0.00406** | 50.2333% | -6.601 | **0.00136** | 17.5% |
 | 43 | 50.2140% | -5.554 | **0.00387** | 50.2264% | -6.214 | **0.00200** | 17.8% |
+| 44 | 50.2145% | -5.581 | **0.00377** | 50.2531% | -7.768 | **0.000423** | 17.9% |
 
 Different-seed detection succeeds at `p < 0.01` for both open- and
-closed-weight tests in **2/2 independent student SFT runs**. The mean ln p
-over these two runs is -5.530 ± 0.047 open and -6.408 ± 0.386 closed
+closed-weight tests in **3/3 independent student SFT runs**. The mean ln p
+over these three runs is -5.547 ± 0.043 open and -6.861 ± 0.934 closed
 (`2×SEM`), compared with the paper's -4.013 ± 1.054 and -3.478 ± 1.206.
-Mean student accuracy is 17.6% ± 0.3 (`2×SEM`). More student seeds are running
+Mean student accuracy is 17.7% ± 0.2 (`2×SEM`). More student seeds are running
 to test whether this holds across the paper's full 10-run protocol.
 
 These results reproduce the paper's central different-seed detectability
-claim for two Qwen3.5 science students. They do not yet reproduce its full
+claim for three Qwen3.5 science students. They do not yet reproduce its full
 10-run evidence or its low utility loss.
 
 ## ADFP λ16 SFT
@@ -137,11 +138,12 @@ different-seed detection.
 
 - The verified λ256 student is strongly detected on known traces.
 - The λ256 fingerprint is also detected on independently sampled,
-  same-prompt teacher traces in 2/2 student runs.
+  same-prompt teacher traces in 3/3 student runs.
 - Seed 42: open `p=0.00406`, closed `p=0.00136`.
 - Seed 43: open `p=0.00387`, closed `p=0.00200`.
+- Seed 44: open `p=0.00377`, closed `p=0.000423`.
 - Unfingerprinted controls remain undetected.
 - The paper's full 10-run robustness test is still in progress.
 - Utility is the unresolved gap: teacher answer-forced accuracy falls from
-  65.41% to 46.18%, and the two λ256 students average 17.6% accuracy versus
+  65.41% to 46.18%, and the three λ256 students average 17.7% accuracy versus
   33.0% for the matched unfingerprinted control.
