@@ -6,6 +6,39 @@ Core ADFP stages are adapted from `YixuanEvenXu/antidistillation-fingerprinting`
 
 Completed experiment results are summarized in [`RESULTS.md`](RESULTS.md).
 
+## Current results
+
+The paper-style ADFP λ256 science experiment uses seed-42 fingerprinted
+teacher traces for training and independently sampled seed-43 traces over the
+same 9,000 prompts for cross-seed detection.
+
+| Student SFT seed | Open-weight ln p | Open p | Closed-weight ln p | Closed p | Science accuracy |
+|---:|---:|---:|---:|---:|---:|
+| 42 | -5.506 | 0.00406 | -6.601 | 0.00136 | 17.5% |
+| 43 | -5.554 | 0.00387 | -6.214 | 0.00200 | 17.8% |
+| 44 | -5.581 | 0.00377 | -7.768 | 0.000423 | 17.9% |
+| 45 | -5.632 | 0.00358 | -6.989 | 0.000922 | 17.2% |
+| **Mean ± 1.96×SEM** | **-5.568 ± 0.052** | **4/4 below 0.01** | **-6.893 ± 0.650** | **4/4 below 0.01** | **17.6% ± 0.3** |
+
+For comparison, the ADFP paper reports different-seed means of
+`-4.013 ± 1.054` open-weight and `-3.478 ± 1.206` closed-weight over 10
+student runs. The four completed science runs therefore reproduce the
+paper's central different-seed detectability claim, but not its utility
+behavior.
+
+| Completed utility measurement | Accuracy |
+|---|---:|
+| Qwen3.5-9B control teacher traces, answer-forced | 65.41% |
+| Qwen3.5-9B ADFP λ256 traces, answer-forced | 46.18% |
+| Qwen3.5-4B base student | 57.5% |
+| Matched paper-hyperparameter control student | 33.0% |
+| ADFP λ256 students, four-run mean | 17.6% |
+
+The fingerprint transfers reliably across teacher sampling seeds, while λ256
+substantially reduces both teacher-trace and student accuracy in this
+Qwen3.5 science setting. See [`RESULTS.md`](RESULTS.md) for known-trace
+measurements, controls, GTP values, λ16 results, and OPD results.
+
 ## Experiment plan
 
 1. Fine-tune Qwen3.5-9B on 9,000 Mixture-of-Thoughts science reasoning traces and validate it on the fixed 1,000-question split.
