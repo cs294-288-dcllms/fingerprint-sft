@@ -100,16 +100,17 @@ the student SFT seed changes.
 | 47 | 50.2144% | -5.575 | **0.00379** | 50.2562% | -7.962 | **0.000349** | 17.5% |
 | 48 | 50.2165% | -5.682 | **0.00341** | 50.2229% | -6.026 | **0.00242** | 19.2% |
 | 49 | 50.2147% | -5.591 | **0.00373** | 50.2368% | -6.798 | **0.00112** | 17.6% |
+| 50 | 50.2163% | -5.673 | **0.00344** | 50.2452% | -7.290 | **0.000683** | 16.7% |
 
 Different-seed detection succeeds at `p < 0.01` for both open- and
-closed-weight tests in **8/8 independent student SFT runs**. The mean ln p
-over these eight runs is -5.565 ± 0.058 open and -6.849 ± 0.484 closed
+closed-weight tests in **9/9 independent student SFT runs**. The mean ln p
+over these nine runs is -5.577 ± 0.056 open and -6.898 ± 0.438 closed
 (`1.96×SEM`), compared with the paper's -4.013 ± 1.054 and -3.478 ± 1.206.
-Mean student accuracy is 17.7% ± 0.5 (`1.96×SEM`). More student seeds are running
+Mean student accuracy is 17.6% ± 0.5 (`1.96×SEM`). One more student seed is running
 to test whether this holds across the paper's full 10-run protocol.
 
 These results reproduce the paper's central different-seed detectability
-claim for eight Qwen3.5 science students. They do not yet reproduce its full
+claim for nine Qwen3.5 science students. They do not yet reproduce its full
 10-run evidence or its low utility loss.
 
 ## ADFP λ16 SFT
@@ -152,8 +153,9 @@ different-seed detection.
 - Seed 47: open `p=0.00379`, closed `p=0.000349`.
 - Seed 48: open `p=0.00341`, closed `p=0.00242`.
 - Seed 49: open `p=0.00373`, closed `p=0.00112`.
+- Seed 50: open `p=0.00344`, closed `p=0.000683`.
 - Unfingerprinted controls remain undetected.
 - The paper's full 10-run robustness test is still in progress.
 - Utility is the unresolved gap: teacher answer-forced accuracy falls from
-  65.41% to 46.18%, and the eight λ256 students average 17.7% accuracy versus
+  65.41% to 46.18%, and the nine λ256 students average 17.6% accuracy versus
   33.0% for the matched unfingerprinted control.
