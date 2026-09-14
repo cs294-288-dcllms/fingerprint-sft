@@ -1,4 +1,91 @@
-# Science results
+# Results
+
+## Exact paper-setting GSM8K reproduction
+
+This run uses the authors' released implementation at commit
+`a05ad2bf6624b6c7d1ecf8064349f6e71035fc1e`. The only source compatibility
+change is replacing the retired dataset identifier `gsm8k` with
+`openai/gsm8k`.
+
+| Setting | Value |
+|---|---|
+| Teacher | DeepSeek-R1-Distill-Qwen-7B |
+| Proxy and student | Qwen2.5-3B |
+| Training data | All 7,473 GSM8K training prompts |
+| Training / evaluation trace seeds | 42 / 43 |
+| ADFP | λ256, γ0.5, token-bigram hash |
+| Teacher sampling | temperature 0.7, top-p 0.95, 512-token maximum |
+| Student SFT | LoRA r128/α128/dropout 0.05, LR `1e-4`, global batch 8, one epoch |
+
+### Utility
+
+Teacher accuracy is measured on generated training traces. “Answer-forced”
+also checks the gold answer appended to a trace that omitted a parseable final
+answer. Student accuracy uses lm-eval-harness 0.4.10 on the GSM8K test set,
+five-shot greedy decoding, and the same 512-token generation cap.
+
+| Model or traces | Raw accuracy | Answer-forced accuracy |
+|---|---:|---:|
+| Control teacher, seed 42 | 70.07% | **89.05%** |
+| Control teacher, seed 43 | 69.72% | **88.63%** |
+| ADFP λ256 teacher, seed 42 | 36.64% | **52.28%** |
+| ADFP λ256 teacher, seed 43 | 36.00% | **51.76%** |
+
+| Student | Flexible extraction | Strict `####` format |
+|---|---:|---:|
+| Matched control SFT | **74.30%** | 54.81% |
+| ADFP λ256 SFT | 66.11% | **61.94%** |
+
+λ256 reduces teacher answer-forced accuracy by 36.77 points and student
+flexible-extraction accuracy by 8.19 points relative to matched controls.
+Both student metrics are shown because the strict score is sensitive to output
+format.
+
+### Fingerprint controls and seed-42 student
+
+Known traces are the seed-42 traces used for student SFT. Different-seed
+traces independently resample the same prompts with teacher seed 43.
+
+| Student | Evaluation traces | Access | GTP | ln p | p |
+|---|---|---|---:|---:|---:|
+| Control | Known | Open-weight | 50.0436% | -0.078 | 0.925 |
+| Control | Known | Closed-weight | 50.0395% | -0.064 | 0.938 |
+| Control | Different seed | Open-weight | 50.1044% | -0.450 | 0.638 |
+| Control | Different seed | Closed-weight | 50.1555% | -0.998 | 0.369 |
+| ADFP λ256 | Known | Open-weight | 51.1999% | -61.742 | 1.53e-27 |
+| ADFP λ256 | Known | Closed-weight | 51.1986% | -61.611 | 1.75e-27 |
+| ADFP λ256 | Different seed | Open-weight | 50.3973% | **-6.770** | **0.00115** |
+| ADFP λ256 | Different seed | Closed-weight | 50.3925% | **-6.610** | **0.00135** |
+
+The unfingerprinted control is undetected in every test. The λ256 student is
+strongly detected on both its training traces and independently sampled
+teacher traces.
+
+### Ten-run different-seed reproduction
+
+All ten students use exactly the same seed-42 fingerprinted traces for SFT
+and the same seed-43 traces for evaluation. Only the student SFT seed changes.
+
+| Student seed | Open ln p | Open p | Closed ln p | Closed p |
+|---:|---:|---:|---:|---:|
+| 42 | -6.770 | 0.001147 | -6.610 | 0.001346 |
+| 43 | -6.744 | 0.001178 | -6.057 | 0.002341 |
+| 44 | -6.664 | 0.001276 | -5.923 | 0.002678 |
+| 45 | -6.642 | 0.001305 | -6.768 | 0.001150 |
+| 46 | -6.628 | 0.001323 | -5.775 | 0.003104 |
+| 47 | -6.804 | 0.001109 | -5.804 | 0.003014 |
+| 48 | -6.801 | 0.001113 | -5.471 | 0.004208 |
+| 49 | -6.733 | 0.001191 | -6.563 | 0.001411 |
+| 50 | -6.757 | 0.001163 | -5.120 | 0.005978 |
+| 51 | -6.790 | 0.001125 | -6.315 | 0.001808 |
+| **Mean ± 1.96×SEM** | **-6.733 ± 0.041** | **10/10 below 0.01** | **-6.041 ± 0.328** | **10/10 below 0.01** |
+| **Paper** | **-4.013 ± 1.054** | — | **-3.478 ± 1.206** | — |
+
+This reproduces the paper's central different-seed detectability result under
+its original model, dataset, λ, and SFT setting. Detection is stronger and
+less variable in this run, while the λ256 utility cost remains substantial.
+
+## Qwen3.5 science adaptation
 
 All student utility numbers use the fixed 1,000-question held-out science
 split. Teacher traces use the fixed 9,000 training prompts. Different-seed

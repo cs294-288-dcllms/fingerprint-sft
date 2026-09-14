@@ -1,12 +1,47 @@
 # Fingerprint Distillation
 
-Reproducible code, configs, and the fixed science split for testing whether an ADFP fingerprint transfers from a Qwen3.5-9B teacher to a Qwen3.5-4B student through SFT and on-policy distillation.
+Reproducible code, configs, and data splits for testing whether an ADFP
+fingerprint transfers through SFT and on-policy distillation. The repository
+includes an exact paper-setting GSM8K reproduction and a Qwen3.5 science
+adaptation.
 
 Core ADFP stages are adapted from `YixuanEvenXu/antidistillation-fingerprinting` at commit `a05ad2bf6624b6c7d1ecf8064349f6e71035fc1e`. OPD uses SkyRL at commit `02a2b53a4142d07a38abf67f9ed7840522ee16ed`.
 
 Completed experiment results are summarized in [`RESULTS.md`](RESULTS.md).
 
 ## Current results
+
+### Exact paper-setting GSM8K reproduction
+
+We reproduced the paper's λ256 experiment using its released code and
+hyperparameters: DeepSeek-R1-Distill-Qwen-7B teacher, Qwen2.5-3B
+proxy/student, all 7,473 GSM8K training prompts, seed-42 training traces, and
+independently sampled seed-43 evaluation traces.
+
+| Measurement | Control | ADFP λ256 |
+|---|---:|---:|
+| Teacher traces, seed 42, answer-forced accuracy | 89.05% | 52.28% |
+| Teacher traces, seed 43, answer-forced accuracy | 88.63% | 51.76% |
+| Student GSM8K, flexible extraction | **74.30%** | 66.11% |
+| Student GSM8K, strict `####` format | 54.81% | **61.94%** |
+| Known-trace open / closed p | 0.925 / 0.938 | 1.53e-27 / 1.75e-27 |
+| Different-seed open / closed p | 0.638 / 0.369 | **0.00115 / 0.00135** |
+
+The repeated-student protocol changes only the student SFT seed while keeping
+the seed-42 training traces and seed-43 evaluation traces fixed.
+
+| Different-seed result | This reproduction | Paper |
+|---|---:|---:|
+| Open-weight mean ln p | **-6.733 ± 0.041** | -4.013 ± 1.054 |
+| Closed-weight mean ln p | **-6.041 ± 0.328** | -3.478 ± 1.206 |
+| Runs detected at p < 0.01 | **10/10 open, 10/10 closed** | Mean reported over 10 runs |
+
+This reproduces the paper's central different-seed detectability result.
+λ256 nevertheless has a substantial utility cost: teacher answer-forced
+accuracy falls by 36.77 points and student flexible-extraction accuracy falls
+by 8.19 points relative to their matched controls.
+
+### Qwen3.5 science adaptation
 
 The paper-style ADFP λ256 science experiment uses seed-42 fingerprinted
 teacher traces for training and independently sampled seed-43 traces over the
