@@ -18,11 +18,12 @@ same 9,000 prompts for cross-seed detection.
 | 43 | -5.554 | 0.00387 | -6.214 | 0.00200 | 17.8% |
 | 44 | -5.581 | 0.00377 | -7.768 | 0.000423 | 17.9% |
 | 45 | -5.632 | 0.00358 | -6.989 | 0.000922 | 17.2% |
-| **Mean ± 1.96×SEM** | **-5.568 ± 0.052** | **4/4 below 0.01** | **-6.893 ± 0.650** | **4/4 below 0.01** | **17.6% ± 0.3** |
+| 46 | -5.403 | 0.00450 | -6.434 | 0.00161 | 16.8% |
+| **Mean ± 1.96×SEM** | **-5.535 ± 0.076** | **5/5 below 0.01** | **-6.801 ± 0.535** | **5/5 below 0.01** | **17.4% ± 0.4** |
 
 For comparison, the ADFP paper reports different-seed means of
 `-4.013 ± 1.054` open-weight and `-3.478 ± 1.206` closed-weight over 10
-student runs. The four completed science runs therefore reproduce the
+student runs. The five completed science runs therefore reproduce the
 paper's central different-seed detectability claim, but not its utility
 behavior.
 
@@ -32,7 +33,7 @@ behavior.
 | Qwen3.5-9B ADFP λ256 traces, answer-forced | 46.18% |
 | Qwen3.5-4B base student | 57.5% |
 | Matched paper-hyperparameter control student | 33.0% |
-| ADFP λ256 students, four-run mean | 17.6% |
+| ADFP λ256 students, five-run mean | 17.4% |
 
 The fingerprint transfers reliably across teacher sampling seeds, while λ256
 substantially reduces both teacher-trace and student accuracy in this
