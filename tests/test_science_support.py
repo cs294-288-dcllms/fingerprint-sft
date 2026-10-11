@@ -5,16 +5,20 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from config import GenerationConfig, ModelSpec
-from hashing import HashConfig
 from data.science import ScienceProvider
+from hashing import HashConfig
 from stages.stage1_generate import (
     _append_checkpoint_rows,
     _build_metadata_payload,
+    _finalize_stage1_shards,
     _load_checkpoint_rows,
+    _rank_completion_path,
     _validate_merged_rows,
+    _write_rank_completion,
 )
 from stages.stage2_teacher_eval import _is_science_correct
 
@@ -23,7 +27,10 @@ class ScienceProviderTest(unittest.TestCase):
     def test_loads_prompt_and_gold_choice_from_local_jsonl(self) -> None:
         row = {
             "messages": [
-                {"role": "user", "content": "Which option is correct? A: one B: two C: three D: four"},
+                {
+                    "role": "user",
+                    "content": "Which option is correct? A: one B: two C: three D: four",
+                },
                 {"role": "assistant", "content": "<think>reason</think>\n\\boxed{C}"},
             ],
             "_meta": {"gold_choice": "C"},
@@ -66,6 +73,61 @@ class Stage1CheckpointTest(unittest.TestCase):
             _validate_merged_rows([rows[1]], 2)
         with self.assertRaisesRegex(RuntimeError, r"duplicate_indices=\[0\]"):
             _validate_merged_rows([rows[1], rows[1]], 2)
+
+    def test_finalizes_complete_rank_shards_without_distributed_barrier(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / "traces" / "traces.jsonl"
+            metadata = root / "traces" / "metadata.json"
+            shard_dir = output.parent / "_tmp_stage1"
+            first = {
+                "index": 0,
+                "prompt": "question zero",
+                "response": "answer zero",
+                "solution": "A",
+            }
+            second = {
+                "index": 1,
+                "prompt": "question one",
+                "response": "answer one",
+                "solution": "B",
+            }
+            _append_checkpoint_rows(shard_dir / "rank_000.jsonl", [first])
+            _append_checkpoint_rows(shard_dir / "rank_001.jsonl", [second])
+            _write_rank_completion(_rank_completion_path(shard_dir, 1), 1)
+
+            cfg = GenerationConfig(
+                dataset="science",
+                split="train",
+                max_examples=2,
+                teacher=ModelSpec(name="teacher"),
+                proxy=ModelSpec(name="proxy"),
+                method="textseal",
+                output_jsonl=output,
+                metadata_path=metadata,
+            )
+            accelerator = SimpleNamespace(
+                process_index=0,
+                num_processes=2,
+                is_main_process=True,
+            )
+
+            result = _finalize_stage1_shards(
+                cfg,
+                HashConfig(seed=123, gamma=0.5),
+                accelerator=accelerator,
+                tmp_dir=shard_dir,
+                local_row_count=1,
+                total_examples=2,
+                length_hint_path=None,
+                timeout_seconds=1,
+            )
+
+            self.assertEqual(result, output)
+            rows = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual([row["response"] for row in rows], ["answer zero", "answer one"])
+            self.assertEqual(json.loads(metadata.read_text())["num_examples"], 2)
+            self.assertFalse(shard_dir.exists())
 
     def test_metadata_records_generation_seed_and_sampling_settings(self) -> None:
         cfg = GenerationConfig(

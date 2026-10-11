@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import argparse
-from datetime import timedelta
 import hashlib
 import json
 import os
+import re
+import time
+from collections.abc import Iterable, Sequence
+from datetime import timedelta
 from pathlib import Path
-from typing import Iterable, List, Sequence
 
 import torch
-import re
 from accelerate import Accelerator
 from accelerate.utils import InitProcessGroupKwargs
 from tqdm.auto import tqdm
@@ -28,7 +29,6 @@ from models.prompts import OASST1_SYSTEM_PROMPT, PromptBuilder
 from utils.env import set_global_seed
 from utils.io import write_json
 from utils.tokenization import load_tokenizer
-
 
 DATASET_PROVIDERS = {
     "gsm8k": GSM8KProvider(),
@@ -54,7 +54,7 @@ def _get_provider(name: str):
     return DATASET_PROVIDERS[name]
 
 
-def _batched(seq: List, batch_size: int) -> Iterable[List]:
+def _batched(seq: list, batch_size: int) -> Iterable[list]:
     """Yield list slices of length batch_size.
 
     Args:
@@ -104,11 +104,7 @@ def _auto_length_hint_candidates(output_jsonl: Path) -> list[Path]:
         labels = ("control", "ads-lambda8", "ads-lambda16", "ads-lambda32")
     else:
         labels = ()
-    return [
-        traces_root / label / "traces.jsonl"
-        for label in labels
-        if label != current_label
-    ]
+    return [traces_root / label / "traces.jsonl" for label in labels if label != current_label]
 
 
 def _resolve_length_hints(
@@ -157,11 +153,11 @@ def _order_examples_by_length_hints(
     return sorted(indexed_examples, key=lambda item: (hints[item[0]], item[0]))
 
 
-def _load_checkpoint_rows(path: Path) -> List[dict]:
+def _load_checkpoint_rows(path: Path) -> list[dict]:
     """Load valid per-rank rows and repair a truncated checkpoint tail."""
     if not path.exists():
         return []
-    rows: List[dict] = []
+    rows: list[dict] = []
     seen_indices: set[int] = set()
     needs_repair = False
     with path.open("r", encoding="utf-8") as handle:
@@ -191,7 +187,7 @@ def _load_checkpoint_rows(path: Path) -> List[dict]:
     return rows
 
 
-def _validate_merged_rows(rows: List[dict], total_examples: int) -> List[dict]:
+def _validate_merged_rows(rows: list[dict], total_examples: int) -> list[dict]:
     """Require exactly one valid trace for every requested dataset index."""
     seen: set[int] = set()
     duplicates: set[int] = set()
@@ -208,13 +204,7 @@ def _validate_merged_rows(rows: List[dict], total_examples: int) -> List[dict]:
     expected = set(range(total_examples))
     missing = sorted(expected - seen)
     unexpected = sorted(seen - expected)
-    if (
-        len(rows) != total_examples
-        or non_integer_count
-        or missing
-        or unexpected
-        or duplicates
-    ):
+    if len(rows) != total_examples or non_integer_count or missing or unexpected or duplicates:
         raise RuntimeError(
             "Stage 1 merge is incomplete or invalid: "
             f"expected_rows={total_examples}, actual_rows={len(rows)}, "
@@ -243,11 +233,20 @@ def _build_metadata_payload(
         "teacher_dtype": cfg.teacher.dtype,
         "proxy_model": cfg.proxy.name,
         "proxy_dtype": cfg.proxy.dtype,
-        "teacher_adapter": (
-            str(cfg.teacher_adapter) if cfg.teacher_adapter is not None else None
-        ),
+        "teacher_adapter": (str(cfg.teacher_adapter) if cfg.teacher_adapter is not None else None),
         "delta": cfg.delta,
         "lambda": cfg.lam,
+        "textseal_ngram": cfg.textseal_ngram if cfg.method == "textseal" else None,
+        "textseal_mixing_alpha": (cfg.textseal_mixing_alpha if cfg.method == "textseal" else None),
+        "textseal_key_a": hash_cfg.seed if cfg.method == "textseal" else None,
+        "textseal_key_b": (
+            (cfg.textseal_key_b if cfg.textseal_key_b is not None else hash_cfg.seed + 12345)
+            if cfg.method == "textseal"
+            else None
+        ),
+        "textseal_candidate_count": (
+            cfg.textseal_candidate_count if cfg.method == "textseal" else None
+        ),
         "num_examples": num_examples,
         "seed": cfg.seed,
         "max_new_tokens": cfg.max_new_tokens,
@@ -277,7 +276,7 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _append_checkpoint_rows(path: Path, rows: List[dict]) -> None:
+def _append_checkpoint_rows(path: Path, rows: list[dict]) -> None:
     """Durably append one completed generation batch to a rank checkpoint."""
     if not rows:
         return
@@ -288,6 +287,143 @@ def _append_checkpoint_rows(path: Path, rows: List[dict]) -> None:
             handle.write("\n")
         handle.flush()
         os.fsync(handle.fileno())
+
+
+def _rank_completion_path(tmp_dir: Path, rank: int) -> Path:
+    """Return the durable completion-marker path for one generation rank."""
+    return tmp_dir / f"rank_{rank:03d}.done.json"
+
+
+def _write_rank_completion(path: Path, row_count: int) -> None:
+    """Atomically mark one rank checkpoint as complete."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        json.dump({"rows": row_count}, handle)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+
+
+def _rank_is_complete(path: Path, expected_rows: int) -> bool:
+    """Return whether a rank marker exists and records the expected row count."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return False
+    return isinstance(payload, dict) and payload.get("rows") == expected_rows
+
+
+def _wait_for_rank_completions(
+    tmp_dir: Path,
+    *,
+    total_examples: int,
+    num_processes: int,
+    timeout_seconds: int,
+) -> None:
+    """Wait for all ranks to durably finish without using a distributed barrier."""
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        incomplete: list[int] = []
+        for rank in range(num_processes):
+            expected_rows = len(range(rank, total_examples, num_processes))
+            if not _rank_is_complete(_rank_completion_path(tmp_dir, rank), expected_rows):
+                incomplete.append(rank)
+        if not incomplete:
+            return
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                "Timed out waiting for Stage 1 rank checkpoints: "
+                f"incomplete_ranks={incomplete}"
+            )
+        time.sleep(1)
+
+
+def _wait_for_outputs(
+    output_jsonl: Path,
+    metadata_path: Path,
+    *,
+    timeout_seconds: int,
+) -> None:
+    """Wait for the main rank to publish final Stage 1 artifacts."""
+    deadline = time.monotonic() + timeout_seconds
+    while not (output_jsonl.is_file() and metadata_path.is_file()):
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                "Timed out waiting for Stage 1 merged outputs: "
+                f"traces={output_jsonl}, metadata={metadata_path}"
+            )
+        time.sleep(1)
+
+
+def _finalize_stage1_shards(
+    cfg: GenerationConfig,
+    hash_cfg: HashConfig,
+    *,
+    accelerator: Accelerator,
+    tmp_dir: Path,
+    local_row_count: int,
+    total_examples: int,
+    length_hint_path: Path | None,
+    timeout_seconds: int,
+) -> Path:
+    """Merge durable rank shards without relying on the Accelerate TCPStore."""
+    _write_rank_completion(
+        _rank_completion_path(tmp_dir, accelerator.process_index),
+        local_row_count,
+    )
+
+    if accelerator.is_main_process:
+        _wait_for_rank_completions(
+            tmp_dir,
+            total_examples=total_examples,
+            num_processes=accelerator.num_processes,
+            timeout_seconds=timeout_seconds,
+        )
+        merged: list[dict] = []
+        for idx in range(accelerator.num_processes):
+            shard = tmp_dir / f"rank_{idx:03d}.jsonl"
+            merged.extend(_load_checkpoint_rows(shard))
+        merged = _validate_merged_rows(merged, total_examples)
+
+        cfg.output_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        with cfg.output_jsonl.open("w", encoding="utf-8") as handle:
+            for row in merged:
+                payload = {
+                    "response": row["response"],
+                    "solution": row["solution"],
+                }
+                if "prompt" in row:
+                    payload["prompt"] = row["prompt"]
+                else:
+                    payload["messages"] = row["messages"]
+                json.dump(payload, handle, ensure_ascii=False)
+                handle.write("\n")
+
+        write_json(
+            cfg.metadata_path,
+            _build_metadata_payload(
+                cfg,
+                len(merged),
+                hash_cfg=hash_cfg,
+                trace_sha256=_sha256_file(cfg.output_jsonl),
+                length_hint_path=length_hint_path,
+            ),
+        )
+
+        for shard in tmp_dir.glob("rank_*.jsonl"):
+            shard.unlink()
+        for marker in tmp_dir.glob("rank_*.done.json"):
+            marker.unlink()
+        tmp_dir.rmdir()
+    else:
+        _wait_for_outputs(
+            cfg.output_jsonl,
+            cfg.metadata_path,
+            timeout_seconds=timeout_seconds,
+        )
+    return cfg.output_jsonl
 
 
 def _prepare_prompt(
@@ -395,11 +531,7 @@ def run_stage1(
     rank_path = tmp_dir / f"rank_{accelerator.process_index:03d}.jsonl"
     rows = _load_checkpoint_rows(rank_path)
     completed_indices = {int(row["index"]) for row in rows}
-    local_examples = [
-        item
-        for item in local_examples
-        if int(item[0]) not in completed_indices
-    ]
+    local_examples = [item for item in local_examples if int(item[0]) not in completed_indices]
     hint_lengths, length_hint_path = _resolve_length_hints(
         length_hints,
         output_jsonl=cfg.output_jsonl,
@@ -415,6 +547,20 @@ def run_stage1(
             )
     if rows and accelerator.is_local_main_process:
         print(f"Stage 1: resuming after {len(rows)} completed local examples", flush=True)
+    if not local_examples:
+        if accelerator.is_local_main_process:
+            print("Stage 1: all local examples checkpointed; finalizing shards", flush=True)
+        return _finalize_stage1_shards(
+            cfg,
+            hash_cfg,
+            accelerator=accelerator,
+            tmp_dir=tmp_dir,
+            local_row_count=len(rows),
+            total_examples=total_examples,
+            length_hint_path=length_hint_path,
+            timeout_seconds=sync_timeout_seconds,
+        )
+
     teacher_tokenizer = load_tokenizer(cfg.teacher, padding_side="left")
     proxy_tokenizer = load_tokenizer(cfg.proxy, padding_side="left")
 
@@ -459,8 +605,8 @@ def run_stage1(
         )
 
     for batch in iterator:
-        gen_prompts: List[str] = []
-        trace_payloads: List[dict] = []
+        gen_prompts: list[str] = []
+        trace_payloads: list[dict] = []
         for _, example in batch:
             rendered, payload = _prepare_prompt(
                 builder,
@@ -495,6 +641,24 @@ def run_stage1(
                 pad_token_id=teacher_tokenizer.pad_token_id,
                 eos_token_id=teacher_tokenizer.eos_token_id,
             )
+        elif cfg.method == "textseal":
+            from models.textseal import TextSealLogitsProcessor, TextSealSpec
+
+            textseal_key_b = (
+                cfg.textseal_key_b if cfg.textseal_key_b is not None else hash_cfg.seed + 12345
+            )
+            logits_processor = TextSealLogitsProcessor(
+                TextSealSpec(
+                    secret_key=hash_cfg.seed,
+                    secret_key_b=textseal_key_b,
+                    ngram=cfg.textseal_ngram,
+                    mixing_alpha=cfg.textseal_mixing_alpha,
+                    temperature=cfg.temperature,
+                    top_p=cfg.top_p,
+                    initial_candidate_count=cfg.textseal_candidate_count,
+                    seed=cfg.seed + 1_000_003 * accelerator.process_index,
+                )
+            )
         elif cfg.method == "control":
             pass
         else:
@@ -507,11 +671,11 @@ def run_stage1(
             eos_token_id=teacher_tokenizer.eos_token_id,
             pad_token_id=teacher_tokenizer.pad_token_id,
             repetition_penalty=cfg.repetition_penalty,
-            do_sample=cfg.temperature > 0,
+            do_sample=cfg.temperature > 0 and cfg.method != "textseal",
         )
         if logits_processor is not None:
             gen_kwargs.update(dict(logits_processor=LogitsProcessorList([logits_processor])))
-        if cfg.temperature > 0:
+        if cfg.temperature > 0 and cfg.method != "textseal":
             gen_kwargs.update(temperature=cfg.temperature, top_p=cfg.top_p)
         if hasattr(logits_processor, "reset"):
             logits_processor.reset()
@@ -525,7 +689,7 @@ def run_stage1(
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )
-        batch_rows: List[dict] = []
+        batch_rows: list[dict] = []
         for (global_idx, example), response_text, trace_payload in zip(
             batch, decoded_responses, trace_payloads
         ):
@@ -551,47 +715,16 @@ def run_stage1(
         rows.extend(batch_rows)
         _append_checkpoint_rows(rank_path, batch_rows)
 
-    accelerator.wait_for_everyone()
-
-    if accelerator.is_main_process:
-        merged: List[dict] = []
-        for idx in range(accelerator.num_processes):
-            shard = tmp_dir / f"rank_{idx:03d}.jsonl"
-            if not shard.exists():
-                continue
-            merged.extend(_load_checkpoint_rows(shard))
-        merged = _validate_merged_rows(merged, total_examples)
-
-        cfg.output_jsonl.parent.mkdir(parents=True, exist_ok=True)
-        with cfg.output_jsonl.open("w", encoding="utf-8") as handle:
-            for row in merged:
-                payload = {
-                    "response": row["response"],
-                    "solution": row["solution"],
-                }
-                if "prompt" in row:
-                    payload["prompt"] = row["prompt"]
-                else:
-                    payload["messages"] = row["messages"]
-                json.dump(payload, handle, ensure_ascii=False)
-                handle.write("\n")
-
-        write_json(
-            cfg.metadata_path,
-            _build_metadata_payload(
-                cfg,
-                len(merged),
-                hash_cfg=hash_cfg,
-                trace_sha256=_sha256_file(cfg.output_jsonl),
-                length_hint_path=length_hint_path,
-            ),
-        )
-
-        for shard in tmp_dir.glob("rank_*.jsonl"):
-            shard.unlink()
-        tmp_dir.rmdir()
-    accelerator.wait_for_everyone()
-    return cfg.output_jsonl
+    return _finalize_stage1_shards(
+        cfg,
+        hash_cfg,
+        accelerator=accelerator,
+        tmp_dir=tmp_dir,
+        local_row_count=len(rows),
+        total_examples=total_examples,
+        length_hint_path=length_hint_path,
+        timeout_seconds=sync_timeout_seconds,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -611,9 +744,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--proxy-model", type=str, required=True)
     parser.add_argument("--proxy-dtype", type=str, default="bfloat16")
     parser.add_argument("--proxy-pad-token", type=str, default=None)
-    parser.add_argument("--method", type=str, choices=["radioactive", "ads", "control"], required=True)
+    parser.add_argument(
+        "--method",
+        type=str,
+        choices=["radioactive", "ads", "textseal", "control"],
+        required=True,
+    )
     parser.add_argument("--delta", type=float, default=None)
     parser.add_argument("--lam", type=float, default=None)
+    parser.add_argument("--textseal-ngram", type=int, default=3)
+    parser.add_argument("--textseal-mixing-alpha", type=float, default=0.1)
+    parser.add_argument("--textseal-key-b", type=int, default=None)
+    parser.add_argument("--textseal-candidate-count", type=int, default=4096)
     parser.add_argument("--hash-config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--metadata", type=Path, required=True)
@@ -650,12 +792,20 @@ def main(argv: list[str] | None = None) -> None:
         dataset=args.dataset,
         split=args.split,
         max_examples=args.max_examples,
-        teacher=ModelSpec(name=args.teacher_model, dtype=args.teacher_dtype, pad_token=args.teacher_pad_token),
-        proxy=ModelSpec(name=args.proxy_model, dtype=args.proxy_dtype, pad_token=args.proxy_pad_token),
+        teacher=ModelSpec(
+            name=args.teacher_model, dtype=args.teacher_dtype, pad_token=args.teacher_pad_token
+        ),
+        proxy=ModelSpec(
+            name=args.proxy_model, dtype=args.proxy_dtype, pad_token=args.proxy_pad_token
+        ),
         method=args.method,  # type: ignore[arg-type]
         teacher_adapter=args.teacher_adapter,
         delta=args.delta,
         lam=args.lam,
+        textseal_ngram=args.textseal_ngram,
+        textseal_mixing_alpha=args.textseal_mixing_alpha,
+        textseal_key_b=args.textseal_key_b,
+        textseal_candidate_count=args.textseal_candidate_count,
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
         top_p=args.top_p,

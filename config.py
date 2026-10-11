@@ -8,7 +8,7 @@ from typing import Literal
 
 EvalMode = Literal["open", "closed"]
 SupervisionMode = Literal["supervised", "unsupervised"]
-WatermarkMethod = Literal["radioactive", "ads", "control"]
+WatermarkMethod = Literal["radioactive", "ads", "textseal", "control"]
 DatasetName = Literal["gsm8k", "oasst1", "science"]
 
 
@@ -132,7 +132,11 @@ class ExperimentLayout:
         """
         student_abbrev = self._abbrev(student_model)
         lr_tag = f"{lr:g}"
-        return self.experiment_dir() / "models" / f"{student_abbrev}_{method_label}_lr{lr_tag}_e{epochs}"
+        return (
+            self.experiment_dir()
+            / "models"
+            / f"{student_abbrev}_{method_label}_lr{lr_tag}_e{epochs}"
+        )
 
     def metrics_dir(self, student_model: str, method_label: str, lr: float, epochs: int) -> Path:
         """Directory for evaluation metrics for a given training run.
@@ -148,7 +152,11 @@ class ExperimentLayout:
         """
         student_abbrev = self._abbrev(student_model)
         lr_tag = f"{lr:g}"
-        return self.experiment_dir() / "metrics" / f"{student_abbrev}_{method_label}_lr{lr_tag}_e{epochs}"
+        return (
+            self.experiment_dir()
+            / "metrics"
+            / f"{student_abbrev}_{method_label}_lr{lr_tag}_e{epochs}"
+        )
 
 
 @dataclass(slots=True)
@@ -185,6 +193,10 @@ class GenerationConfig:
     teacher_adapter: Path | None = None
     delta: float | None = None
     lam: float | None = None
+    textseal_ngram: int = 3
+    textseal_mixing_alpha: float = 0.1
+    textseal_key_b: int | None = None
+    textseal_candidate_count: int = 4096
     max_new_tokens: int = 512
     temperature: float = 0.7
     top_p: float = 0.95
@@ -211,6 +223,9 @@ class GenerationConfig:
             if self.lam is None:
                 raise ValueError("lam must be set for ads runs")
             return f"lambda{self.lam:g}".replace(".", "_")
+        if self.method == "textseal":
+            alpha = f"{self.textseal_mixing_alpha:g}".replace(".", "_")
+            return f"alpha{alpha}-k{self.textseal_ngram}"
         if self.method == "control":
             return "control"
         raise ValueError(f"Unsupported method: {self.method}")
@@ -235,12 +250,16 @@ class FinetuneConfig:
     traces_jsonl: Path
     output_dir: Path
     epochs: int
+    max_steps: int = -1
     init_adapter: Path | None = None
     gradient_checkpointing: bool = False
     batch_size: int = 1
     grad_accum: int = 4
     learning_rate: float = 2e-5
     max_seq_length: int = 4096
+    save_steps: int = 50
+    save_total_limit: int = 2
+    save_only_final: bool = False
     rank: int = 128
     alpha: int = 128
     dropout: float = 0.05

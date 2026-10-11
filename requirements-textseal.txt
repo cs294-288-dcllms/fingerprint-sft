@@ -1,0 +1,2 @@
+-r requirements-gpu.txt
+textseal @ git+https://github.com/facebookresearch/textseal.git@c60d0d1da2e59f09a698438e218a07ee779b4616

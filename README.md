@@ -140,6 +140,64 @@ After OPD, evaluate sensitivity to the teacher's sampling seed:
 This reuses the same 9,000 training prompts for every seed and writes a compact
 white-box/black-box table under `teacher_seed_robustness/results.md`.
 
+## TextSeal
+
+TextSeal is available as an optional generation and evaluation strategy. The
+upstream implementation is pinned in `requirements-textseal.txt`; generated
+traces, adapters, and evaluation shards remain under ignored output directories.
+
+Install the optional dependency:
+
+```bash
+python -m pip install -r requirements-textseal.txt
+```
+
+Generate TextSeal teacher traces with the standard Stage 1 interface:
+
+```bash
+python stages/stage0_hash.py \
+  --exp-dir outputs/textseal/hash \
+  --gamma 0.5 \
+  --seed 294288 \
+  --output outputs/textseal/hash/hash_config.json
+
+accelerate launch stages/stage1_generate.py \
+  --dataset science \
+  --split train \
+  --max-examples 9000 \
+  --teacher-model Qwen/Qwen3.5-9B \
+  --proxy-model Qwen/Qwen3.5-4B \
+  --method textseal \
+  --hash-config outputs/textseal/hash/hash_config.json \
+  --output outputs/textseal/traces.jsonl \
+  --metadata outputs/textseal/metadata.json \
+  --textseal-ngram 3 \
+  --textseal-mixing-alpha 0.1 \
+  --textseal-candidate-count 256
+```
+
+Train the student with `stages/stage3_finetune.py`, exactly as for control or
+ADFP traces. Evaluate direct corpus detection with
+`scripts/eval_textseal_corpus.py`, and evaluate inherited open-model
+radioactivity on known and independently sampled traces with:
+
+```bash
+torchrun --standalone --nproc-per-node=8 \
+  scripts/eval_textseal_radioactivity.py \
+  --model Qwen/Qwen3.5-4B \
+  --adapter outputs/textseal/student_lora \
+  --trace-set known=outputs/textseal/traces.jsonl \
+  --trace-set independent=outputs/textseal/independent.jsonl \
+  --output-dir outputs/textseal/radioactivity \
+  --secret-key 294288 \
+  --secret-key-b 306633 \
+  --ngram 3 \
+  --mixing-alpha 0.1
+```
+
+The radioactivity evaluator reports both global context deduplication (`v1`,
+the stricter primary metric) and context-plus-prediction deduplication (`v2`).
+
 ## OPD configuration
 
 | Parameter | Value |

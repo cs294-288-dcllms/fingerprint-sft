@@ -3,19 +3,43 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
-from config import FinetuneConfig, ModelSpec
-from datasets import Dataset
-from models.loader import load_causal_lm
-from models.lora import lora_target_modules
-from models.prompts import OASST1_SYSTEM_PROMPT, PromptBuilder
-from peft import LoraConfig, PeftModel
-from trl import SFTConfig, SFTTrainer
-from transformers.trainer_utils import get_last_checkpoint
-from utils.env import set_global_seed
-from utils.io import read_jsonl_rows
-from utils.tokenization import load_tokenizer
+
+def _configure_runtime_caches() -> dict[str, Path]:
+    """Create writable accelerator caches before importing Torch/FLA."""
+    runtime_root = Path(
+        os.environ.get("RUNTIME_CACHE_ROOT")
+        or Path(os.environ.get("XDG_CACHE_HOME") or "/tmp") / "fingerprint-sft"
+    )
+    defaults = {
+        "TRITON_CACHE_DIR": runtime_root / "triton-sft",
+        "TORCHINDUCTOR_CACHE_DIR": runtime_root / "torchinductor-sft",
+        "CUDA_CACHE_PATH": runtime_root / "cuda",
+    }
+    configured: dict[str, Path] = {}
+    for variable, default in defaults.items():
+        path = Path(os.environ.setdefault(variable, str(default)))
+        path.mkdir(parents=True, exist_ok=True)
+        configured[variable] = path
+    return configured
+
+
+_configure_runtime_caches()
+
+from datasets import Dataset  # noqa: E402
+from peft import LoraConfig, PeftModel  # noqa: E402
+from transformers.trainer_utils import get_last_checkpoint  # noqa: E402
+from trl import SFTConfig, SFTTrainer  # noqa: E402
+
+from config import FinetuneConfig, ModelSpec  # noqa: E402
+from models.loader import load_causal_lm  # noqa: E402
+from models.lora import lora_target_modules  # noqa: E402
+from models.prompts import OASST1_SYSTEM_PROMPT, PromptBuilder  # noqa: E402
+from utils.env import set_global_seed  # noqa: E402
+from utils.io import read_jsonl_rows  # noqa: E402
+from utils.tokenization import load_tokenizer  # noqa: E402
 
 SFT_SAVE_STEPS = 50
 SFT_SAVE_TOTAL_LIMIT = 2
@@ -33,8 +57,7 @@ def _validate_training_responses(rows: list[dict]) -> None:
     invalid = [
         index
         for index, row in enumerate(rows)
-        if not isinstance(row.get("response"), str)
-        or not row["response"].strip()
+        if not isinstance(row.get("response"), str) or not row["response"].strip()
     ]
     if invalid:
         raise RuntimeError(
@@ -58,9 +81,7 @@ def _mask_prompt(tokenizer, prompt: str, response: str, max_length: int) -> dict
     prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
     response_ids = tokenizer(response, add_special_tokens=False)["input_ids"]
     eos_token_id = tokenizer.eos_token_id
-    if eos_token_id is not None and (
-        not response_ids or response_ids[-1] != eos_token_id
-    ):
+    if eos_token_id is not None and (not response_ids or response_ids[-1] != eos_token_id):
         response_ids.append(eos_token_id)
     input_ids = (prompt_ids + response_ids)[:max_length]
     prompt_len = min(len(prompt_ids), len(input_ids))
@@ -143,9 +164,7 @@ def run_stage3(cfg: FinetuneConfig) -> Path:
         model.config.use_cache = False
     if cfg.init_adapter is not None:
         if not cfg.init_adapter.is_dir():
-            raise FileNotFoundError(
-                f"Initial adapter directory does not exist: {cfg.init_adapter}"
-            )
+            raise FileNotFoundError(f"Initial adapter directory does not exist: {cfg.init_adapter}")
         model = PeftModel.from_pretrained(
             model,
             str(cfg.init_adapter),
@@ -182,12 +201,12 @@ def run_stage3(cfg: FinetuneConfig) -> Path:
         gradient_accumulation_steps=cfg.grad_accum,
         learning_rate=cfg.learning_rate,
         num_train_epochs=cfg.epochs,
-        max_steps=-1,
+        max_steps=cfg.max_steps,
         warmup_ratio=0.0,
         logging_steps=10,
-        save_strategy="steps",
-        save_steps=SFT_SAVE_STEPS,
-        save_total_limit=SFT_SAVE_TOTAL_LIMIT,
+        save_strategy="no" if cfg.save_only_final else "steps",
+        save_steps=cfg.save_steps,
+        save_total_limit=cfg.save_total_limit,
         dataset_text_field=None,
         report_to=[],
         remove_unused_columns=False,
@@ -205,9 +224,7 @@ def run_stage3(cfg: FinetuneConfig) -> Path:
         "model": model,
         "args": training_args,
         "train_dataset": train_dataset,
-        "data_collator": lambda batch: _pad_batch(
-            batch, tokenizer, cfg.max_seq_length
-        ),
+        "data_collator": lambda batch: _pad_batch(batch, tokenizer, cfg.max_seq_length),
     }
     if lora is not None:
         trainer_kwargs["peft_config"] = lora
@@ -245,6 +262,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=-1,
+        help="Optional step cap for smoke tests; -1 trains for all epochs.",
+    )
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--grad-accum", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=2e-5)
@@ -253,6 +276,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dropout", type=float, default=0.05)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-seq-length", type=int, default=4096)
+    parser.add_argument("--save-steps", type=int, default=SFT_SAVE_STEPS)
+    parser.add_argument(
+        "--save-total-limit",
+        type=int,
+        default=SFT_SAVE_TOTAL_LIMIT,
+        help="Number of resumable Trainer checkpoints to retain.",
+    )
+    parser.add_argument(
+        "--save-only-final",
+        action="store_true",
+        help=(
+            "Skip intermediate Trainer checkpoints and retain only the final adapter. "
+            "This minimizes disk usage but interrupted runs cannot resume."
+        ),
+    )
     parser.add_argument("--dataset", type=str, default="gsm8k")
     return parser
 
@@ -278,6 +316,7 @@ def main(argv: list[str] | None = None) -> None:
         traces_jsonl=args.traces,
         output_dir=args.output_dir,
         epochs=args.epochs,
+        max_steps=args.max_steps,
         init_adapter=args.init_adapter,
         gradient_checkpointing=args.gradient_checkpointing,
         batch_size=args.batch_size,
@@ -288,6 +327,9 @@ def main(argv: list[str] | None = None) -> None:
         dropout=args.dropout,
         seed=args.seed,
         max_seq_length=args.max_seq_length,
+        save_steps=args.save_steps,
+        save_total_limit=args.save_total_limit,
+        save_only_final=args.save_only_final,
     )
     run_stage3(cfg)
 
