@@ -1,0 +1,14 @@
+{
+  "examples": 9000,
+  "response_tokens": 13267395,
+  "kept_tokens": 3327937,
+  "protected_kept": 11088,
+  "drop_rate": 0.75,
+  "drop_seed": 0,
+  "mask_mode": "top-entropy",
+  "entropy_file": "entropy/textseal-olmo.npz",
+  "protect_special": true,
+  "kept_fraction": 0.25083575185633655,
+  "longest_example": 4096,
+  "rank": 0
+}

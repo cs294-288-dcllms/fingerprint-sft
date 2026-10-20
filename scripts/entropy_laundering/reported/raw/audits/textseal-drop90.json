@@ -1,0 +1,10 @@
+{
+  "examples": 9000,
+  "response_tokens": 13267395,
+  "kept_tokens": 1328516,
+  "drop_rate": 0.9,
+  "drop_seed": 0,
+  "kept_fraction": 0.10013389968415051,
+  "longest_example": 4096,
+  "rank": 0
+}

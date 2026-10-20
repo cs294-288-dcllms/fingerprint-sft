@@ -1,0 +1,14 @@
+{
+  "examples": 9000,
+  "response_tokens": 12379470,
+  "kept_tokens": 6197721,
+  "protected_kept": 7986,
+  "drop_rate": 0.5,
+  "drop_seed": 0,
+  "mask_mode": "top-entropy",
+  "entropy_file": "entropy/synthid-llama.npz",
+  "protect_special": true,
+  "kept_fraction": 0.5006451003152801,
+  "longest_example": 4096,
+  "rank": 0
+}

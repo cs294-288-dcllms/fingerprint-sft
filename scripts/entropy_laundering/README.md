@@ -3,8 +3,9 @@
 The student is trained on watermarked teacher traces, but a chosen fraction of response tokens is dropped
 from the SFT loss (labels set to -100; the tokens stay in the input as context). Choosing the tokens a
 reference model is most uncertain about removes the TextSeal and SynthID fingerprints at little accuracy
-cost, because the watermark signal lives almost entirely in high-entropy positions. The attacker needs only
-the traces: no teacher access and no key. Results: [RESULTS.md](RESULTS.md).
+cost, because the watermark signal concentrates in high-entropy positions. The attacker needs only
+the traces: no teacher access and no key. Results: [RESULTS.md](RESULTS.md). **Start with [HANDOVER.md](HANDOVER.md)** (status, setup, caveats, next steps, file map);
+background notes in [docs/CONCEPTS.md](docs/CONCEPTS.md); trace data in [traces/](traces/); slide figures in [figures/](figures/).
 
 ## Files
 

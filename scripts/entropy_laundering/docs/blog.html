@@ -1,0 +1,542 @@
+<title>Catching Distilled Models</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+  svg: { fontCache: 'global' },
+  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+};
+</script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>
+<style>
+/* Layout: one 680px reading column, paper-style sections; figures and tables may widen to 820px. Single light theme by choice. */
+:root {
+  --ink: #15181d;
+  --ink-2: #4a505a;
+  --ink-3: #7a808b;
+  --paper: #ffffff;
+  --wash: #f4f6f9;
+  --rule: #e2e6ec;
+  --accent: #2a78d6;
+  --c-control: #9aa1ac;
+  --c-a01: #2a78d6;
+  --c-a0: #eb6834;
+  --display: "Hanken Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+html { background: var(--paper); }
+body { background: var(--paper); color: var(--ink); font: 400 18px/1.65 var(--body); padding-inline: 20px; }
+main { max-width: 820px; margin: 0 auto; padding-block: 56px 96px; }
+.col { max-width: 680px; margin-inline: auto; }
+h1, h2, h3, .eyebrow, figcaption .fig-no, th, .legend, .meta, nav a { font-family: var(--display); }
+h1 { font-size: clamp(2rem, 5vw, 2.75rem); line-height: 1.12; font-weight: 700; letter-spacing: -0.02em; margin: 10px 0 14px; text-wrap: balance; }
+h2 { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.01em; margin: 56px 0 12px; text-wrap: balance; }
+h3 { font-size: 1.08rem; font-weight: 600; margin: 32px 0 6px; text-wrap: balance; }
+h2 .num, h3 .num { color: var(--ink-3); font-weight: 500; margin-right: 10px; }
+p { margin: 0 0 16px; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.eyebrow { font-size: 0.74rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+.subtitle { font-size: 1.2rem; color: var(--ink-2); margin: 0 0 20px; }
+.meta { font-size: 0.85rem; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.status { margin-top: 22px; padding: 12px 16px; background: var(--wash); border-radius: 6px; font-size: 0.92rem; color: var(--ink-2); }
+.status strong { color: var(--ink); }
+.abstract { margin-top: 40px; padding-top: 28px; border-top: 1px solid var(--rule); }
+.abstract p { font-size: 1.02rem; }
+nav.toc { margin: 28px 0 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.86rem; }
+nav.toc a { color: var(--ink-2); text-decoration: none; }
+nav.toc a:hover { color: var(--accent); }
+ul, ol { margin: 0 0 16px; padding-left: 1.3em; }
+li { margin-bottom: 6px; }
+code, .mono { font-family: var(--mono); font-size: 0.84em; }
+code { background: var(--wash); padding: 1px 5px; border-radius: 4px; }
+.eq { margin: 6px 0 20px; padding: 4px 16px; background: var(--wash); border-radius: 6px; overflow-x: auto; overflow-y: hidden; }
+mjx-container { color: var(--ink); }
+mjx-container[display="true"] { margin: 0.7em 0 !important; }
+li mjx-container[display="true"] { margin: 0.5em 0 !important; overflow-x: auto; overflow-y: hidden; }
+.def { margin: 0 0 16px; padding-left: 16px; border-left: 2px solid var(--rule); color: var(--ink-2); }
+.def b { color: var(--ink); font-weight: 600; }
+figure { margin: 34px 0 36px; }
+figcaption { font-size: 0.9rem; color: var(--ink-2); margin-top: 10px; max-width: 680px; }
+figcaption .fig-no { font-weight: 600; color: var(--ink); margin-right: 6px; }
+.chart { width: 100%; overflow-x: auto; }
+.chart svg { display: block; width: 100%; height: auto; min-width: 560px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.82rem; color: var(--ink-2); margin-bottom: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.legend i.line { width: 16px; height: 0; border-top: 2px dashed var(--ink-3); border-radius: 0; }
+.tbl { overflow-x: auto; margin: 22px 0 30px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+td.n, th.n { text-align: right; font-family: var(--mono); font-size: 0.84rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.sub td { color: var(--ink-3); }
+.tbl-cap { font-size: 0.86rem; color: var(--ink-2); margin: -18px 0 30px; }
+.key { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; vertical-align: 0; }
+.callout { margin: 24px 0; padding: 16px 20px; background: var(--wash); border-radius: 6px; }
+.callout p:last-child { margin-bottom: 0; }
+.refs { font-size: 0.9rem; color: var(--ink-2); }
+.refs li { margin-bottom: 8px; }
+#tip { position: fixed; pointer-events: none; background: var(--ink); color: #fff; font: 500 0.78rem/1.4 var(--display); padding: 7px 10px; border-radius: 5px; max-width: 260px; z-index: 10; }
+.mark { cursor: default; }
+.mark:hover, .mark:focus { opacity: 0.85; outline: none; }
+@media (max-width: 520px) { body { font-size: 17px; } h2 { margin-top: 44px; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<main>
+  <header class="col">
+    <div class="eyebrow">Research draft · fingerprint-sft project</div>
+    <h1>Can a free watermark catch a distilled model?</h1>
+    <p class="subtitle">Testing whether TextSeal, a quality-preserving watermark, transfers through distillation as reliably as antidistillation fingerprinting, and what it takes to measure that fairly.</p>
+    <div class="meta"><span>Draft of 15 October 2026</span><span>Qwen3.5-9B teacher → Qwen3.5-4B student</span><span>Science multiple-choice reasoning</span></div>
+    <div class="status"><strong>Status: preliminary.</strong> Every student result below comes from a single training seed in a reconstructed setup. Numbers will move as seeds are added. Claims are worded to match the evidence available today.</div>
+    <nav class="toc" aria-label="Sections">
+      <a href="#abstract">Abstract</a><a href="#intro">1 Introduction</a><a href="#background">2 Background</a><a href="#methods">3 Methods</a><a href="#results">4 Results</a><a href="#discussion">5 Discussion</a><a href="#related">6 Related work</a><a href="#conclusion">7 Conclusion</a><a href="#refs">References</a>
+    </nav>
+  </header>
+
+  <section class="col abstract" id="abstract">
+    <div class="eyebrow">Abstract</div>
+    <p>A model owner who suspects that a competitor trained on their model's outputs needs statistical evidence. Distillation fingerprints provide it by hiding a keyed pattern in the teacher's text that a student absorbs during training. Antidistillation fingerprinting (ADFP) makes the pattern learnable on purpose and is detectable even on fresh teacher samples, but it biases the teacher's output and costs accuracy. TextSeal, a distortion-free Gumbel-max watermark, leaves each token's probability unchanged and costs no measurable quality, but its distillation results only test the student on the exact traces it was trained on. We run both methods in one setup: a Qwen3.5-9B teacher fine-tuned for science reasoning, distilled into Qwen3.5-4B with LoRA. We reproduce ADFP's central result on GSM8K and in our science setting, where it is detected in 10 of 10 student runs but cuts student accuracy from 33.0% to 17.6%. For TextSeal we find two evaluation pitfalls that each fabricate an accuracy penalty: greedy decoding turns a 0.3-point gap into 8.7 points, and a silent 1,024-token training cap removes the endings of half the training traces. Under sampled decoding and full-length training, TextSeal students stay within noise of the control (83.2–83.7% vs 85.1%, one seed). Every TextSeal student is strongly detected on its training traces (p down to 3×10⁻⁵) while controls are not. Detection from the student's own free generations remains the open problem: pooled tests do not reach p &lt; 0.01, but the share of individually flagged outputs is 3–6 times the control rate, and the single-key variant (α = 0) comes closest (pooled p = 0.016).</p>
+  </section>
+
+  <section class="col" id="intro">
+    <h2><span class="num">1</span>Introduction</h2>
+    <p>Distillation lets a small model learn much of a large model's behaviour from its outputs alone. Training a student on a few thousand reasoning traces from a stronger teacher can lift its accuracy by double digits. That makes deployed frontier models attractive targets: anyone with API access can collect traces and fine-tune their own model on them, often against the provider's terms of service.</p>
+    <p>The provider then faces a membership-inference problem. Did this suspect model train on our outputs? Generic membership inference works poorly on large language models. Watermarks change the picture. If the teacher's outputs carry a keyed statistical pattern, a student trained on them can inherit a diluted copy of it, an effect called <em>radioactivity</em> [Sander et al. 2024]. The owner, who holds the key, can test for that copy and report a p-value.</p>
+    <p>Two recent methods make opposite trade-offs. <strong>ADFP</strong> [Xu et al. 2026] biases the teacher toward a secret set of tokens, choosing the bias with a proxy student so that it is easy to learn. It is detectable even on teacher samples the student never saw, but the bias degrades the teacher's answers. <strong>TextSeal</strong> [Sander et al. 2026] picks tokens with keyed randomness instead of real randomness. In expectation every token keeps its original probability, so quality is untouched, and the paper shows the watermark transfers through distillation. Its distillation test, however, scores the student on the exact traces it was trained on, a setting ADFP's authors call an upper bound that is unrealistic in practice.</p>
+    <p>So the question this project asks is simple. <strong>Can a distillation fingerprint be both free and detectable on new teacher samples?</strong> This draft reports where we stand. Its contributions, all preliminary:</p>
+    <ul>
+      <li>A reproduction of ADFP's different-seed detection, on GSM8K with the authors' code and in a Qwen3.5 science adaptation, including its accuracy cost.</li>
+      <li>Two evaluation pitfalls that each manufacture a false accuracy penalty for TextSeal: greedy decoding, and an unintended 1,024-token training cap.</li>
+      <li>A matched comparison of TextSeal at α = 0.1 and α = 0 on utility, trace quality, detection on training traces, and detection from free generations.</li>
+      <li>An explicit separation of the detection tests used in the two papers, and the observation that no published result yet shows TextSeal detected on new teacher samples.</li>
+    </ul>
+  </section>
+
+  <section class="col" id="background">
+    <h2><span class="num">2</span>Background</h2>
+    <p>This section collects everything needed to follow the rest of the post. Readers who know LLM watermarking can skip to the threat model in 2.6.</p>
+
+    <h3><span class="num">2.1</span>Distillation</h3>
+    <p>In <em>sequence-level distillation</em>, the teacher answers a set of prompts and the student is fine-tuned to reproduce those answers with the usual next-token loss. For reasoning models the answers are long chain-of-thought traces, here delimited by <code>&lt;think&gt; … &lt;/think&gt;</code> and followed by a final answer. In our experiments the student is fine-tuned with LoRA, which trains small low-rank adapter matrices instead of all weights. A second variant, <em>on-policy distillation</em>, lets the student generate and has the teacher score the student's tokens; it appears only in the discussion.</p>
+
+    <h3><span class="num">2.2</span>Green and red lists</h3>
+    <p>The classic LLM watermark [Kirchenbauer et al. 2023] hashes the previous \(w\) tokens together with a secret key \(k\) into a <em>green list</em> \(S \subset \mathcal{V}\) containing a fraction \(\gamma\) of the vocabulary. Generation adds a constant \(\delta\) to the logit of every green token, \(\tilde z_t = z_t + \delta\,\mathbb{1}[t \in S]\). Unwatermarked text lands on green tokens about \(\gamma\) of the time; watermarked text lands there more often, which a one-sided test detects. The cost is distortion: the boost shifts probability toward tokens the model would not otherwise choose.</p>
+
+    <h3><span class="num">2.3</span>Radioactivity</h3>
+    <p>Sander et al. [2024] showed that a model fine-tuned on watermarked text inherits a weak preference for the watermark's favoured tokens. The student never sees the key, but it learns a context-to-token mapping that happens to correlate with it. That inherited bias is what every distillation fingerprint relies on.</p>
+
+    <h3><span class="num">2.4</span>Antidistillation fingerprinting (ADFP)</h3>
+    <p>ADFP keeps the green list (\(\gamma = 0.5\), a 2-token hash window) but replaces the uniform boost with one derived from the student's learning dynamics. A proxy model, a stand-in for the unknown student, predicts a next-token distribution \(q\). With \(S\) the current green list, the teacher's logits \(z\) become</p>
+    <div class="eq">\[ \tilde z = z + \lambda\,\Delta, \qquad \Delta_t = q_t\,\bigl(\mathbb{1}[t \in S] - L\bigr), \qquad L = \sum_{t \in S} q_t . \]</div>
+    <p>Here \(L\) is the proxy's total probability on green tokens, and \(\Delta = \partial L / \partial z\) is its gradient with respect to the proxy's logits. Under an isotropic approximation of the logit-gradient Gram matrix, \(\Delta\) is the perturbation that most increases the green probability a student would have after one fine-tuning step on the sampled token. In words: boost green tokens that the proxy already finds likely, because those are the ones a student will actually learn. \(\lambda\) sets the strength.</p>
+    <p>Detection measures the student's <em>green-token probability</em> \(g_{\text{obs}}\) (GTP) over \(n\) contexts whose last two tokens are distinct. With open weights, GTP is the average probability the student puts on green tokens; with closed weights, one token is sampled per context and the green fraction is counted. Under the null hypothesis that the student is independent of the key, GTP is a mean of \(n\) independent variables in \([0,1]\) with mean \(\gamma\), and Hoeffding's inequality gives a conservative p-value:</p>
+    <div class="eq">\[ p = \exp\!\bigl(-2n\,(g_{\text{obs}} - \gamma)^2\bigr). \]</div>
+    <p>This is why a GTP of 50.2% can be decisive: with \(n = 600{,}000\) contexts and \(g_{\text{obs}} - \gamma = 0.002\), the exponent is \(-4.8\), so \(p \approx 0.008\).</p>
+
+    <h3><span class="num">2.5</span>Gumbel-max watermarks and TextSeal</h3>
+    <p>A Gumbel-max watermark [Aaronson &amp; Kirchner 2023] changes how the token is sampled, not which tokens are likely. A keyed pseudo-random function assigns every candidate token \(v\) a value \(R_v \in [0,1]\) from the previous \(k\) tokens and the key, and the sampler picks</p>
+    <div class="eq">\[ x_t = \operatorname*{arg\,max}_{v \in \mathcal{V}} \; R_v^{\,1/p_v} . \]</div>
+    <p>If the \(R_v\) were truly uniform, this picks token \(v\) with probability exactly \(p_v\), so the scheme is distortion-free for a single token. Because the \(R_v\) are keyed, the chosen token tends to have a high \(R\). A detector with the key recomputes \(R_t\) for each observed token and sums</p>
+    <div class="eq">\[ D_T = \sum_{t=1}^{T} -\ln(1 - R_t), \qquad D_T \sim \Gamma(T, 1) \ \text{under the null}, \]</div>
+    <p>so the p-value is the upper tail of a Gamma distribution. Watermarked text scores higher, by an amount that grows with the entropy of the text: when the model is nearly certain, the top token wins regardless of \(R\).</p>
+    <p>The sampler is deterministic: the same context always gives the same token. Within one long trace, a repeated \(k\)-gram locks the sampler onto the same continuation, which can start a repetition loop. TextSeal [Sander et al. 2026] adds three things:</p>
+    <ul>
+      <li><strong>Dual keys.</strong> Each token uses the second key with probability \(\alpha\) (default \(0.1\)) and the first otherwise. \(\alpha = 0\) is plain single-key Gumbel-max. Mixing restores diversity at some cost in signal per token.</li>
+      <li><strong>Early-fusion, entropy-weighted detection.</strong> The detector does not know which key produced each token, so it fuses both scores and weights each token by its local entropy \(H_i\), estimated with a forward pass of a model:
+        \[ s_i = (1-\alpha)\,s_i^{(1)} + \alpha\,s_i^{(2)}, \quad s_i^{(j)} = -\ln\bigl(1 - R_i^{(j)}\bigr), \quad D = \sum_i w_i\,s_i . \]
+        The weight \(w_i\) is an increasing function of \(H_i\); \(\sqrt{\hat H_i}\) of the normalized entropy works best. The weighted sum is matched to a Gamma distribution by its first two moments to give the p-value. Low-entropy tokens carry little signal and are down-weighted.</li>
+      <li><strong>Localized detection</strong> for documents that mix watermarked and human text. We do not use it here.</li>
+    </ul>
+    <p>TextSeal uses a \(k = 3\)-token context. Detection deduplicates repeated (context, token) pairs, because identical pairs give identical scores and would break the independence the test assumes.</p>
+
+    <h3><span class="num">2.6</span>Threat model and the four detection tests</h3>
+    <p>The owner holds the key and suspects a model. Two choices define the test, and the papers differ on the first.</p>
+    <div class="def"><b>Which text is scored.</b> <em>Training traces</em> (called <em>supervised</em> by ADFP, and the only setting in TextSeal's distillation section): the owner feeds the exact traces the student trained on and scores the student's next-token predictions. <em>New teacher samples</em> (ADFP's <em>unsupervised</em> headline): fresh teacher outputs for the same prompts under a different random seed, which the student never saw. A third variant scores the student's own <em>free generations</em> with the text detector.</div>
+    <div class="def"><b>What access the owner has.</b> <em>Open weights</em>: read the student's probabilities. <em>Closed weights</em>: only sampled outputs.</div>
+    <p>Training-trace tests are an upper bound, because a real owner rarely knows the suspect's training set. New-sample and free-generation tests are what a real dispute would use.</p>
+
+    <figure aria-labelledby="fig1-cap">
+      <div class="chart" id="fig1"></div>
+      <figcaption id="fig1-cap"><span class="fig-no">Figure 1.</span>The pipeline. The teacher answers training prompts with a watermark; the student is fine-tuned on those traces. Detection either scores the student on its training traces, on new teacher samples for the same prompts, or on text the student generates itself.</figcaption>
+    </figure>
+  </section>
+
+  <section class="col" id="methods">
+    <h2><span class="num">3</span>Methods</h2>
+
+    <h3><span class="num">3.1</span>Models and data</h3>
+    <p><strong>Data.</strong> 9,000 science multiple-choice questions with reasoning traces for training and 1,000 held-out questions for evaluation, with no prompt overlap.</p>
+    <p><strong>Teacher.</strong> Qwen3.5-9B fine-tuned with LoRA (rank 32, α 64, LR 3×10⁻⁵, one epoch) on the 9,000 gold traces. It answers 84.6% of the held-out questions correctly with greedy decoding.</p>
+    <p><strong>Traces.</strong> The teacher answers all 9,000 training prompts with temperature 0.7, top-p 0.95, up to 3,840 new tokens, seed 42, under three conditions: no watermark (control), TextSeal α = 0.1, and TextSeal α = 0. Both TextSeal conditions use keys 294288 and 306633, a 3-token context, and the official TextSeal pseudo-random function.</p>
+    <p><strong>Student.</strong> Qwen3.5-4B fine-tuned with LoRA (rank 32, α 64, dropout 0.05, LR 5×10⁻⁵, one epoch, effective batch 16, seed 42) on each trace set, with the prompt masked from the loss. Students are trained either with the original pipeline, which in practice truncated sequences to 1,024 tokens (Section 4.2), or with the full 4,096-token length.</p>
+    <p><strong>Repetition filter.</strong> For one α = 0 student we drop traces in which any 100-character span occurs three or more times, following TextSeal's Appendix E.4. It removes 1,810 of 9,000 α = 0 traces.</p>
+
+    <h3><span class="num">3.2</span>Evaluation</h3>
+    <p><strong>Accuracy.</strong> Each student answers the 1,000 held-out questions in thinking mode with a 2,048-token cap. We report two decoders: greedy, as in the original pipeline, and Qwen3.5's recommended thinking-mode sampling (temperature 1.0, top-p 0.95, top-k 20, presence penalty 1.5). Hugging Face transformers has no presence penalty, so we implement one that counts generated tokens only, applied before temperature, matching vLLM. Accuracy differences are tested with paired McNemar tests over questions.</p>
+    <p><strong>Detection on training traces.</strong> 419 training prompts: the 512 used by earlier follow-ups, minus the 93 removed by the α = 0 filter, so every student is scored on identical prompts. The student reads each trace with teacher forcing; its top-1 predictions are scored with the TextSeal function using the α of the trace set (α = 0 means only the second key). Contexts are deduplicated globally. We report the unweighted and the √H entropy-weighted p-values, and score each control student with the same key and α as the watermarked student it is compared to.</p>
+    <p><strong>Detection from free generations.</strong> The TextSeal text detector runs on the students' 1,000 sampled answers, with global context deduplication. We report the pooled p-value and the share of answers individually flagged at p &lt; 0.01, compared with the control by a one-sided Fisher test.</p>
+  </section>
+
+  <section id="results">
+    <div class="col">
+      <h2><span class="num">4</span>Results</h2>
+      <h3><span class="num">4.1</span>ADFP reproduces, at a cost</h3>
+      <p>With the authors' released code and hyperparameters on GSM8K (DeepSeek-R1-Distill-Qwen-7B teacher, Qwen2.5-3B student, λ = 256), the fingerprint is detected on new teacher samples in all 10 student runs, more strongly than the paper reports. In our science adaptation the same holds, but the λ = 256 student collapses in accuracy.</p>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Setting</th><th class="n">Open-weight mean ln p</th><th class="n">Closed-weight mean ln p</th><th class="n">Runs with p &lt; 0.01</th><th class="n">Student accuracy</th></tr></thead>
+        <tbody>
+          <tr><td>ADFP paper, GSM8K, λ 256</td><td class="n">−4.01 ± 1.05</td><td class="n">−3.48 ± 1.21</td><td class="n">—</td><td class="n">—</td></tr>
+          <tr><td>Our GSM8K reproduction, λ 256</td><td class="n">−6.73 ± 0.04</td><td class="n">−6.04 ± 0.33</td><td class="n">10 / 10</td><td class="n">66.1% (control 74.3%)</td></tr>
+          <tr><td>Science, λ 256</td><td class="n">−5.56 ± 0.07</td><td class="n">−6.92 ± 0.39</td><td class="n">10 / 10</td><td class="n">17.6% (control 33.0%)</td></tr>
+          <tr><td>Science, λ 16, one run</td><td class="n">p = 0.36</td><td class="n">p = 0.69</td><td class="n">0 / 1</td><td class="n">67.3%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col tbl-cap">Detection on new teacher samples (different sampling seed, same prompts). Means are over 10 student training seeds with 1.96 × SEM. The science λ 256 runs use the paper's student hyperparameters (LoRA rank 128, LR 10⁻⁴), under which even the unwatermarked control drops from the base model's 57.5% to 33.0%. GSM8K accuracy is flexible-extraction accuracy on the test set.</p>
+    <div class="col">
+      <p>Two things matter for what follows. ADFP's new-sample detection is real, and the ADFP paper's own Table 1 shows it is modest at matched quality (mean p ≈ 0.02 for LoRA students) and that a plain red/green watermark is not detected at all in that setting. And the strength needed to get there, λ = 256, costs 19 points of teacher accuracy in our science setting. A weaker λ = 16 keeps more accuracy but is not detected on new samples.</p>
+
+      <h3><span class="num">4.2</span>Two pitfalls that fabricate an accuracy penalty</h3>
+      <p><strong>Greedy decoding.</strong> The original pipeline evaluated students greedily. Greedy decoding traps reasoning models in loops: once a loop starts, the argmax keeps choosing it until the token cap. TextSeal traces loop somewhat more than control traces, the student inherits that tendency, and greedy decoding amplifies it. Under sampling the gap disappears (Figure 2).</p>
+    </div>
+    <figure aria-labelledby="fig2-cap">
+      <div class="legend col" aria-hidden="true"><span><i style="background:var(--c-control)"></i>Control student</span><span><i style="background:var(--c-a01)"></i>TextSeal α = 0.1</span><span><i style="background:var(--c-a0)"></i>TextSeal α = 0</span></div>
+      <div class="chart" id="fig2"></div>
+      <figcaption class="col" id="fig2-cap"><span class="fig-no">Figure 2.</span>Student accuracy on 1,000 held-out questions. Each line joins a student's greedy accuracy (hollow) to its sampled accuracy (filled). Under greedy decoding TextSeal trails control by 8.7–11.4 points (McNemar p ≤ 5×10⁻⁹); under sampling by 0.3–1.9 points (p ≥ 0.14). α = 0 students were only evaluated with sampling. Full-length sampled numbers for control and α = 0.1 come from a separate run of the same sampler with a different seed.</figcaption>
+    </figure>
+    <div class="col">
+      <p><strong>A silent 1,024-token training cap.</strong> The training script accepted <code>--max-seq-length 4096</code> but never passed it to the trainer's config, whose default in TRL 0.24 is 1,024 tokens. Every early student therefore trained on truncated traces:</p>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Control traces, 9,000</th><th class="n">Truncated at 1,024</th><th class="n">Full length</th></tr></thead>
+        <tbody>
+          <tr><td>Traces cut short</td><td class="n">4,706 (52%)</td><td class="n">0</td></tr>
+          <tr><td>Supervised tokens</td><td class="n">7.4 M</td><td class="n">12.8 M</td></tr>
+          <tr><td>Traces that still contain <code>&lt;/think&gt;</code></td><td class="n">5,379 (60%)</td><td class="n">8,312 (92%)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <p>Half the students' training examples never showed how a solution ends, which plausibly explains why so many evaluation answers ran out of tokens before giving one. Training at full length raises the control student by 3.0 points under greedy decoding (95% CI 0.5 to 5.5) and by 3.2 points under sampling. TextSeal traces are slightly longer, so truncation removed a little more of them. All results from here on use full-length students unless marked otherwise.</p>
+
+      <h3><span class="num">4.3</span>Utility: TextSeal stays within noise of control</h3>
+      <p>With sampling and full-length training, the TextSeal α = 0.1 student scores 83.2% against the control's 85.1% (paired difference −1.9 points, 95% CI −4.3 to 0.5, McNemar p = 0.14). The two α = 0 students score 83.6% (all 9,000 traces) and 83.7% (7,190 filtered traces), indistinguishable from α = 0.1 (p ≥ 0.73) and not significantly below control (p = 0.27 each). Despite training on traces that loop twice as often, the unfiltered α = 0 student loops in only 2.9% of its sampled answers. Filtering made no visible difference to accuracy.</p>
+      <p>All TextSeal students sit 1.4–1.9 points below control. That direction is consistent across three students, but each comparison is within noise, and it needs more seeds before it can be called a cost.</p>
+
+      <h3><span class="num">4.4</span>Trace quality: α = 0 loops more, as predicted</h3>
+      <p>TextSeal's paper notes that single-key Gumbel-max can lock into loops. Our teacher traces show the dose response directly (Figure 3). The share of traces the repetition filter rejects rises from 0.8% for control to 12.7% at α = 0.1 and 20.1% at α = 0. Answer correctness falls only slightly (90.7%, 89.9%, 87.6%).</p>
+    </div>
+    <figure aria-labelledby="fig3-cap">
+      <div class="chart" id="fig3"></div>
+      <figcaption class="col" id="fig3-cap"><span class="fig-no">Figure 3.</span>Teacher trace quality over 9,000 traces per condition. Bars show the share rejected by TextSeal's repetition filter (a 100-character span recurring three or more times) and the share that never close the reasoning block.</figcaption>
+    </figure>
+
+    <div class="col">
+      <h3><span class="num">4.5</span>Detection on training traces: clear for every TextSeal student</h3>
+      <p>On the 419 matched training prompts, every watermarked student is detected and every control is not (Figure 4). Neither α wins outright. The entropy-weighted test favours unfiltered α = 0 (p = 2.8×10⁻⁵ against 1.6×10⁻³ for α = 0.1); the unweighted test favours α = 0.1 (6.6×10⁻⁵ against 2.5×10⁻⁴). The filtered α = 0 student, trained on 20% fewer traces, is weaker than the unfiltered one under both tests. Full-length training gives slightly stronger transfer than 1,024-token training for α = 0.1.</p>
+    </div>
+    <figure aria-labelledby="fig4-cap">
+      <div class="legend col" aria-hidden="true"><span><i style="background:var(--c-a0)"></i>TextSeal α = 0</span><span><i style="background:var(--c-a01)"></i>TextSeal α = 0.1</span><span><i style="background:var(--c-control)"></i>Control (no watermark)</span><span><i class="line"></i>p = 0.01</span></div>
+      <div class="chart" id="fig4"></div>
+      <figcaption class="col" id="fig4-cap"><span class="fig-no">Figure 4.</span>Open-weight detection on the 419 training traces, as −log₁₀ p (longer is stronger). Each student shows the entropy-weighted test (solid) and the unweighted test (light). About 213,000–220,000 unique scored tokens per run. Controls are scored with the same key and α as the student they are compared with.</figcaption>
+    </figure>
+    <div class="col">
+      <p>For context, the earlier α = 0.1 student (1,024-token training) was also tested on 512 <em>new teacher samples</em>: p = 0.40 open-weight, not detected. That is the setting where ADFP succeeds, and it has not yet been run at full scale for any TextSeal student (Section 5).</p>
+
+      <h3><span class="num">4.6</span>Detection from free generations: a signal the pooled test misses</h3>
+      <p>The hardest closed-weight test scores the student's own sampled answers. No TextSeal student reaches pooled p &lt; 0.01. But counting how many of the 1,000 answers are individually flagged tells a different story (Figure 5): controls sit near the nominal 1%, while TextSeal students are flagged 3.4–5.6 times as often. α = 0 does best on both measures, with the filtered student at pooled p = 0.016.</p>
+    </div>
+    <figure aria-labelledby="fig5-cap">
+      <div class="legend col" aria-hidden="true"><span><i style="background:var(--c-a0)"></i>TextSeal α = 0</span><span><i style="background:var(--c-a01)"></i>TextSeal α = 0.1</span><span><i style="background:var(--c-control)"></i>Control</span><span><i class="line"></i>1% expected by chance</span></div>
+      <div class="chart" id="fig5"></div>
+      <figcaption class="col" id="fig5-cap"><span class="fig-no">Figure 5.</span>Share of the 1,000 sampled answers flagged individually at p &lt; 0.01 by the TextSeal text detector, full-length students, recommended sampling. Labels give the pooled p over all answers. One-sided Fisher tests against the control: α = 0 unfiltered p = 1×10⁻¹⁴, α = 0 filtered 4×10⁻⁹, α = 0.1 2×10⁻⁶.</figcaption>
+    </figure>
+    <div class="col">
+      <p>The likely reason is concentration. The pooled test averages about 500,000 deduplicated tokens, while the signal appears to live in a minority of answers. We suspect those are answers in which the student reproduces memorised watermarked phrasing, but we have not verified this.</p>
+      <div class="callout">
+        <p><strong>Does the presence penalty destroy free-generation detection?</strong> The pooled p moved from 0.069 under greedy decoding to 0.949 under recommended sampling for the 1,024-token α = 0.1 student. Three things changed at once (temperature, top-k, presence penalty), and with a weak signal a pooled p-value swings widely. The per-answer flag rate moved only from 8.1% to 6.1% (control 1.4% and 1.7%). A penalty of 1.5 logits on every reused token is a large, key-independent push, so some weakening is plausible, but the run that isolates it (temperature 0.6, no penalty) has not been done. Open-weight tests read probabilities and are unaffected by decoding.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="col" id="discussion">
+    <h2><span class="num">5</span>Discussion and limitations</h2>
+    <p><strong>What we can say.</strong> In this setting TextSeal costs no accuracy that one seed can detect, once evaluation uses sampling and training uses full-length traces. It transfers clearly to the student under the training-trace test. ADFP pays a large accuracy price for detectability on new samples. The comparison the field needs, TextSeal on new teacher samples at ADFP's scale, is still missing.</p>
+    <p><strong>Limitations.</strong></p>
+    <ul>
+      <li>One training seed per student. ADFP's own variance across seeds is large, and small gaps here could reverse.</li>
+      <li>The teacher, data and hyperparameters were reconstructed, not taken from the original runs.</li>
+      <li>Detection used 419–512 traces. ADFP's new-sample results use all 7,473–9,000 prompts.</li>
+      <li>LoRA rank 32 for one epoch only. ADFP's appendix shows that full fine-tuning for one epoch weakens transfer while three epochs strengthen it, so epochs may matter more than the adapter type.</li>
+      <li>Accuracy is a 2,048-token-capped multiple-choice score; 14–18% of sampled answers still end before closing their reasoning.</li>
+      <li>Sampled numbers for some students come from a separate implementation of the same sampler with a different seed.</li>
+    </ul>
+    <p><strong>Next experiments,</strong> in order of value:</p>
+    <ol>
+      <li>Generate 9,000 new teacher samples per TextSeal variant under a new seed and run the new-sample test at ADFP's scale.</li>
+      <li>Repeat every student with at least three training seeds.</li>
+      <li>Ablate context size (k = 1, 2, 3). Transfer to new samples needs the student to see the same context-to-token pairs across samples, and shorter contexts recur more often.</li>
+      <li>Train for three epochs, then try full fine-tuning.</li>
+      <li>Isolate the presence penalty with a temperature-0.6, no-penalty evaluation.</li>
+      <li>On-policy distillation, where the teacher scores the student's tokens instead of sampling: a sampling-only watermark like TextSeal leaves no trace there by construction, while ADFP's logit perturbation can.</li>
+    </ol>
+  </section>
+
+  <section class="col" id="related">
+    <h2><span class="num">6</span>Related work</h2>
+    <p><strong>Output watermarks.</strong> Kirchenbauer et al. [2023] introduced green/red-list watermarking; Aaronson and Kirchner [2023] the Gumbel-max scheme. Kuditipudi et al. [2024] and Christ et al. [2024] study distortion-free and undetectable constructions. SynthID-Text [Dathathri et al. 2024] uses tournament sampling and is deployed in Gemini. Fernandez et al. [2023] give reliable statistical tests and the deduplication rule used here. TextSeal [Sander et al. 2026] builds on Gumbel-max with dual keys, entropy weighting and localization.</p>
+    <p><strong>Radioactivity and learnability.</strong> Sander et al. [2024] showed that watermarks transfer through fine-tuning and introduced the teacher-forcing test; Sander et al. [2025] use this for benchmark contamination detection, and Gu et al. [2023] study how well watermarks can be learned by students. Sablayrolles et al. [2020] proposed radioactive data for image classifiers.</p>
+    <p><strong>Antidistillation.</strong> Antidistillation sampling [Savani et al. 2025] perturbs a teacher's logits with proxy-model gradients to poison distillation. ADFP [Xu et al. 2026] repurposes that mechanism to make a fingerprint easy to learn. Ma et al. [2026] protect against distillation by rewriting traces.</p>
+    <p><strong>Membership inference.</strong> Generic membership inference on LLMs performs close to chance [Duan et al. 2024]. Jagielski et al. [2024] show students reveal their teacher's training data. Watermark-based fingerprints turn distillation detection into a tractable, key-based version of the same question.</p>
+  </section>
+
+  <section class="col" id="conclusion">
+    <h2><span class="num">7</span>Conclusion</h2>
+    <p>A distortion-free watermark looks close to free for distillation fingerprinting in our setting: TextSeal students match control accuracy within noise and are clearly detectable on their training traces. Getting there required fixing two evaluation artifacts that each produced a convincing but false accuracy penalty. The decisive question remains open: whether TextSeal, or a variant designed for learnability, can be detected on teacher samples and student generations the owner did not train on, as ADFP is, without ADFP's cost. Single-key TextSeal's stronger signal in free generations is the most promising lead so far, and the experiments that would settle it are now well defined.</p>
+  </section>
+
+  <section class="col" id="refs">
+    <h2>References</h2>
+    <ol class="refs">
+      <li>Aaronson, S. and Kirchner, H. Watermarking GPT outputs. 2023.</li>
+      <li>Christ, M., Gunn, S. and Zamir, O. Undetectable watermarks for language models. COLT 2024.</li>
+      <li>Dathathri, S. et al. Scalable watermarking for identifying large language model outputs. Nature 634, 2024.</li>
+      <li>Duan, M. et al. Do membership inference attacks work on large language models? arXiv:2402.07841, 2024.</li>
+      <li>Fernandez, P. et al. Three bricks to consolidate watermarks for large language models. WIFS 2023.</li>
+      <li>Gu, C., Li, X. L., Liang, P. and Hashimoto, T. On the learnability of watermarks for language models. arXiv:2312.04469, 2023.</li>
+      <li>Jagielski, M. et al. Students parrot their teachers: membership inference on model distillation. NeurIPS 2023.</li>
+      <li>Kirchenbauer, J. et al. A watermark for large language models. ICML 2023.</li>
+      <li>Kuditipudi, R. et al. Robust distortion-free watermarks for language models. TMLR 2024.</li>
+      <li>Ma, X. et al. Protecting language models against unauthorized distillation through trace rewriting. arXiv:2602.15143, 2026.</li>
+      <li>Sablayrolles, A. et al. Radioactive data: tracing through training. ICML 2020.</li>
+      <li>Sander, T. et al. Watermarking makes language models radioactive. NeurIPS 2024.</li>
+      <li>Sander, T. et al. Detecting benchmark contamination through watermarking. arXiv:2502.17259, 2025.</li>
+      <li>Sander, T. et al. TextSeal: a localized LLM watermark for provenance and distillation protection. <a href="https://arxiv.org/abs/2605.12456">arXiv:2605.12456</a>, 2026.</li>
+      <li>Savani, Y. et al. Antidistillation sampling. arXiv:2504.13146, 2025.</li>
+      <li>Xu, Y. E. et al. Antidistillation fingerprinting. ICML 2026. <a href="https://arxiv.org/abs/2602.03812">arXiv:2602.03812</a>.</li>
+    </ol>
+  </section>
+</main>
+<div id="tip" hidden></div>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg';
+  var C = { control: '#9aa1ac', a01: '#2a78d6', a0: '#eb6834', ink: '#15181d', ink2: '#4a505a', ink3: '#7a808b', rule: '#e2e6ec', wash: '#f4f6f9', paper: '#ffffff' };
+  var FONT = '"Hanken Grotesk", "Helvetica Neue", Arial, sans-serif';
+  var MONO = '"JetBrains Mono", ui-monospace, Menlo, monospace';
+
+  function el(name, attrs, parent, text) {
+    var n = document.createElementNS(NS, name);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    if (text != null) n.textContent = text;
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function svg(host, w, h, label) {
+    var s = el('svg', { viewBox: '0 0 ' + w + ' ' + h, role: 'img', 'aria-label': label });
+    document.getElementById(host).appendChild(s);
+    return s;
+  }
+  function txt(parent, x, y, s, o) {
+    o = o || {};
+    return el('text', { x: x, y: y, fill: o.fill || C.ink2, 'font-family': o.mono ? MONO : FONT, 'font-size': o.size || 12, 'font-weight': o.weight || 400, 'text-anchor': o.anchor || 'start', 'dominant-baseline': o.base || 'middle' }, parent, s);
+  }
+  // Horizontal bar with a 4px rounded data-end and a square baseline end.
+  function hbar(parent, x0, y, len, h, fill) {
+    var r = Math.min(4, len / 2, h / 2);
+    var d = 'M' + x0 + ',' + y + 'h' + (len - r) + 'a' + r + ',' + r + ' 0 0 1 ' + r + ',' + r + 'v' + (h - 2 * r) + 'a' + r + ',' + r + ' 0 0 1 -' + r + ',' + r + 'h-' + (len - r) + 'z';
+    return el('path', { d: d, fill: fill }, parent);
+  }
+  var tip = document.getElementById('tip');
+  function hoverable(node, text) {
+    node.setAttribute('class', 'mark');
+    node.setAttribute('tabindex', '0');
+    node.setAttribute('aria-label', text);
+    function show(e) {
+      tip.textContent = text; tip.hidden = false;
+      var x = e.clientX, y = e.clientY;
+      if (x == null) { var b = node.getBoundingClientRect(); x = b.right; y = b.top; }
+      tip.style.left = Math.min(x + 14, window.innerWidth - tip.offsetWidth - 8) + 'px';
+      tip.style.top = (y - tip.offsetHeight - 10) + 'px';
+    }
+    node.addEventListener('mousemove', show);
+    node.addEventListener('focus', show);
+    node.addEventListener('mouseleave', function () { tip.hidden = true; });
+    node.addEventListener('blur', function () { tip.hidden = true; });
+  }
+
+  // Figure 1: pipeline schematic.
+  (function () {
+    var s = svg('fig1', 760, 250, 'Pipeline from watermarked teacher to student to three detection tests');
+    function box(x, y, w, h, title, sub, strong) {
+      el('rect', { x: x, y: y, width: w, height: h, rx: 6, fill: strong ? C.wash : C.paper, stroke: C.rule, 'stroke-width': 1 }, s);
+      txt(s, x + w / 2, y + h / 2 - (sub ? 9 : 0), title, { anchor: 'middle', fill: C.ink, size: 13, weight: 600 });
+      if (sub) txt(s, x + w / 2, y + h / 2 + 11, sub, { anchor: 'middle', size: 11, fill: C.ink3 });
+    }
+    function arrow(x1, y1, x2, y2) {
+      el('line', { x1: x1, y1: y1, x2: x2, y2: y2, stroke: C.ink3, 'stroke-width': 1.5 }, s);
+      var a = Math.atan2(y2 - y1, x2 - x1), L = 7;
+      el('path', { d: 'M' + x2 + ',' + y2 + 'L' + (x2 - L * Math.cos(a - 0.45)) + ',' + (y2 - L * Math.sin(a - 0.45)) + 'L' + (x2 - L * Math.cos(a + 0.45)) + ',' + (y2 - L * Math.sin(a + 0.45)) + 'z', fill: C.ink3 }, s);
+    }
+    box(10, 95, 130, 60, 'Teacher', 'Qwen3.5-9B + key', true);
+    box(190, 95, 150, 60, 'Watermarked traces', '9,000 prompts, seed 42');
+    box(390, 95, 120, 60, 'Student', 'Qwen3.5-4B, LoRA', true);
+    arrow(140, 125, 186, 125);
+    arrow(340, 125, 386, 125);
+    txt(s, 263, 82, 'sample with watermark', { anchor: 'middle', size: 11, fill: C.ink3 });
+    txt(s, 363, 82, 'fine-tune', { anchor: 'middle', size: 11, fill: C.ink3 });
+    var tests = [
+      ['Training traces', 'teacher-forced, upper bound', 20],
+      ['New teacher samples', 'same prompts, new seed', 95],
+      ['Free generations', "student's own answers", 170]
+    ];
+    tests.forEach(function (t) {
+      box(580, t[2], 170, 58, t[0], t[1]);
+      arrow(510, 125, 576, t[2] + 29);
+    });
+    txt(s, 545, 238, 'Detection tests (owner holds the key)', { anchor: 'middle', size: 11, fill: C.ink3 });
+  })();
+
+  // Figure 2: greedy -> sampled accuracy, dumbbells on a shared axis.
+  (function () {
+    var rows = [
+      { label: 'Control', train: '1,024-token training', key: 'control', g: 78.0, s: 80.5 },
+      { label: 'TextSeal α = 0.1', train: '1,024-token training', key: 'a01', g: 69.3, s: 80.2 },
+      { label: 'Control', train: 'full-length training', key: 'control', g: 81.0, s: 85.1 },
+      { label: 'TextSeal α = 0.1', train: 'full-length training', key: 'a01', g: 69.6, s: 83.2 },
+      { label: 'TextSeal α = 0', train: 'full length, all traces', key: 'a0', g: null, s: 83.6 },
+      { label: 'TextSeal α = 0', train: 'full length, filtered', key: 'a0', g: null, s: 83.7 }
+    ];
+    var W = 760, L = 200, R = 40, top = 30, rowH = 40, H = top + rows.length * rowH + 40;
+    var lo = 65, hi = 90, x = function (v) { return L + (v - lo) / (hi - lo) * (W - L - R); };
+    var s = svg('fig2', W, H, 'Greedy versus sampled student accuracy');
+    [65, 70, 75, 80, 85, 90].forEach(function (t) {
+      el('line', { x1: x(t), x2: x(t), y1: top - 10, y2: top + rows.length * rowH, stroke: C.rule, 'stroke-width': 1 }, s);
+      txt(s, x(t), top + rows.length * rowH + 16, t + '%', { anchor: 'middle', size: 11, fill: C.ink3, mono: true });
+    });
+    txt(s, x(77.5), H - 6, 'Accuracy on 1,000 held-out questions', { anchor: 'middle', size: 11, fill: C.ink3 });
+    txt(s, x(69.3), top - 18, 'greedy', { anchor: 'middle', size: 11, fill: C.ink3 });
+    txt(s, x(80.2), top - 18, 'sampled', { anchor: 'middle', size: 11, fill: C.ink3 });
+    rows.forEach(function (r, i) {
+      var y = top + i * rowH + rowH / 2, col = C[r.key];
+      txt(s, 0, y - 7, r.label, { fill: C.ink, size: 12.5, weight: 600 });
+      txt(s, 0, y + 9, r.train, { size: 11, fill: C.ink3 });
+      if (r.g != null) {
+        el('line', { x1: x(r.g), x2: x(r.s), y1: y, y2: y, stroke: col, 'stroke-width': 2, 'stroke-linecap': 'round' }, s);
+        var hg = el('circle', { cx: x(r.g), cy: y, r: 5, fill: C.paper, stroke: col, 'stroke-width': 2 }, s);
+        hoverable(hg, r.label + ', ' + r.train + ': greedy ' + r.g.toFixed(1) + '%');
+        txt(s, x(r.g) - 10, y, r.g.toFixed(1), { anchor: 'end', size: 11, mono: true, fill: C.ink2 });
+      }
+      var hs = el('circle', { cx: x(r.s), cy: y, r: 5.5, fill: col, stroke: C.paper, 'stroke-width': 2 }, s);
+      hoverable(hs, r.label + ', ' + r.train + ': sampled ' + r.s.toFixed(1) + '%');
+      txt(s, x(r.s) + 11, y, r.s.toFixed(1), { size: 11, mono: true, fill: C.ink });
+    });
+    el('line', { x1: 0, x2: W - R, y1: top + 2 * rowH, y2: top + 2 * rowH, stroke: C.rule, 'stroke-width': 1 }, s);
+  })();
+
+  // Figure 3: trace quality, two small panels sharing one row layout.
+  (function () {
+    var conds = [
+      { label: 'Control', key: 'control', rep: 0.8, open: 7.6 },
+      { label: 'TextSeal α = 0.1', key: 'a01', rep: 12.7, open: 11.0 },
+      { label: 'TextSeal α = 0', key: 'a0', rep: 20.1, open: 16.9 }
+    ];
+    var W = 760, H = 170, s = svg('fig3', W, H, 'Teacher trace quality by condition');
+    var panels = [
+      { title: 'Rejected by repetition filter', field: 'rep', x0: 140, w: 250 },
+      { title: 'Never close the reasoning block', field: 'open', x0: 480, w: 250 }
+    ];
+    var max = 25, top = 34, rowH = 36, bh = 18;
+    conds.forEach(function (c, i) { txt(s, 0, top + i * rowH + rowH / 2, c.label, { fill: C.ink, size: 12.5, weight: 600 }); });
+    panels.forEach(function (p) {
+      txt(s, p.x0, 12, p.title, { size: 12, fill: C.ink2, weight: 600 });
+      var x = function (v) { return p.x0 + v / max * p.w; };
+      [0, 10, 20].forEach(function (t) {
+        el('line', { x1: x(t), x2: x(t), y1: top - 4, y2: top + conds.length * rowH, stroke: C.rule, 'stroke-width': 1 }, s);
+        txt(s, x(t), top + conds.length * rowH + 14, t + '%', { anchor: 'middle', size: 11, fill: C.ink3, mono: true });
+      });
+      conds.forEach(function (c, i) {
+        var y = top + i * rowH + (rowH - bh) / 2, v = c[p.field];
+        var b = hbar(s, p.x0, y, Math.max(v / max * p.w, 2), bh, C[c.key]);
+        hoverable(b, c.label + ': ' + v.toFixed(1) + '% ' + p.title.toLowerCase());
+        txt(s, x(v) + 7, y + bh / 2, v.toFixed(1) + '%', { size: 11, mono: true, fill: C.ink });
+      });
+    });
+  })();
+
+  // Figure 4: training-trace detection, -log10 p, paired bars per student.
+  (function () {
+    var rows = [
+      { label: 'α = 0, all traces', key: 'a0', ew: 2.82e-5, uw: 2.45e-4 },
+      { label: 'α = 0, filtered', key: 'a0', ew: 2.16e-4, uw: 8.2e-4 },
+      { label: 'α = 0.1, full length', key: 'a01', ew: 1.58e-3, uw: 6.61e-5 },
+      { label: 'α = 0.1, 1,024 training', key: 'a01', ew: 3.53e-3, uw: 1.71e-4 },
+      { label: 'Control, α = 0 key', key: 'control', ew: 0.795, uw: 0.584 },
+      { label: 'Control, α = 0.1 key', key: 'control', ew: 0.921, uw: 0.342 },
+      { label: 'Control (1,024), α = 0 key', key: 'control', ew: 0.645, uw: 0.49 }
+    ];
+    var W = 760, L = 200, R = 70, top = 14, rowH = 40, bh = 13, gap = 2;
+    var H = top + rows.length * rowH + 36, max = 5;
+    var x = function (v) { return L + v / max * (W - L - R); };
+    var s = svg('fig4', W, H, 'Detection strength on training traces');
+    [0, 1, 2, 3, 4, 5].forEach(function (t) {
+      el('line', { x1: x(t), x2: x(t), y1: top - 4, y2: top + rows.length * rowH, stroke: C.rule, 'stroke-width': 1 }, s);
+      txt(s, x(t), top + rows.length * rowH + 14, String(t), { anchor: 'middle', size: 11, fill: C.ink3, mono: true });
+    });
+    txt(s, x(2.5), H - 6, '−log₁₀ p  (2 = p of 0.01; 4 = p of 0.0001)', { anchor: 'middle', size: 11, fill: C.ink3 });
+    el('line', { x1: x(2), x2: x(2), y1: top - 4, y2: top + rows.length * rowH, stroke: C.ink3, 'stroke-width': 1.2, 'stroke-dasharray': '4 3' }, s);
+    rows.forEach(function (r, i) {
+      var y0 = top + i * rowH + (rowH - 2 * bh - gap) / 2;
+      txt(s, 0, top + i * rowH + rowH / 2, r.label, { fill: C.ink, size: 12.5, weight: 600 });
+      [['ew', 'entropy-weighted', 1], ['uw', 'unweighted', 0.4]].forEach(function (m, j) {
+        var p = r[m[0]], v = -Math.log10(p), y = y0 + j * (bh + gap);
+        var b = hbar(s, L, y, Math.max(x(v) - L, 2), bh, C[r.key]);
+        b.setAttribute('fill-opacity', m[2]);
+        hoverable(b, r.label + ', ' + m[1] + ': p = ' + p.toPrecision(2));
+        txt(s, x(v) + 6, y + bh / 2, 'p ' + p.toPrecision(2), { size: 10.5, mono: true, fill: j ? C.ink3 : C.ink });
+      });
+    });
+  })();
+
+  // Figure 5: free-generation per-answer flag rates.
+  (function () {
+    var rows = [
+      { label: 'α = 0, all traces', key: 'a0', rate: 9.0, pooled: '0.087' },
+      { label: 'α = 0, filtered', key: 'a0', rate: 6.7, pooled: '0.016' },
+      { label: 'α = 0.1', key: 'a01', rate: 5.4, pooled: '0.52' },
+      { label: 'Control, α = 0 key', key: 'control', rate: 1.6, pooled: '0.90' },
+      { label: 'Control, α = 0.1 key', key: 'control', rate: 1.4, pooled: '0.91' }
+    ];
+    var W = 760, L = 200, R = 150, top = 14, rowH = 36, bh = 18;
+    var H = top + rows.length * rowH + 36, max = 10;
+    var x = function (v) { return L + v / max * (W - L - R); };
+    var s = svg('fig5', W, H, 'Share of free generations flagged by the detector');
+    [0, 2, 4, 6, 8, 10].forEach(function (t) {
+      el('line', { x1: x(t), x2: x(t), y1: top - 4, y2: top + rows.length * rowH, stroke: C.rule, 'stroke-width': 1 }, s);
+      txt(s, x(t), top + rows.length * rowH + 14, t + '%', { anchor: 'middle', size: 11, fill: C.ink3, mono: true });
+    });
+    txt(s, x(5), H - 6, 'Answers flagged at p < 0.01', { anchor: 'middle', size: 11, fill: C.ink3 });
+    el('line', { x1: x(1), x2: x(1), y1: top - 4, y2: top + rows.length * rowH, stroke: C.ink3, 'stroke-width': 1.2, 'stroke-dasharray': '4 3' }, s);
+    txt(s, W - R + 30, top - 2, 'pooled p', { size: 11, fill: C.ink3 });
+    rows.forEach(function (r, i) {
+      var y = top + i * rowH + (rowH - bh) / 2;
+      txt(s, 0, y + bh / 2, r.label, { fill: C.ink, size: 12.5, weight: 600 });
+      var b = hbar(s, L, y, x(r.rate) - L, bh, C[r.key]);
+      hoverable(b, r.label + ': ' + r.rate.toFixed(1) + '% of answers flagged; pooled p = ' + r.pooled);
+      txt(s, x(r.rate) + 7, y + bh / 2, r.rate.toFixed(1) + '%', { size: 11, mono: true, fill: C.ink });
+      txt(s, W - R + 30, y + bh / 2, r.pooled, { size: 11, mono: true, fill: C.ink2 });
+    });
+  })();
+})();
+</script>

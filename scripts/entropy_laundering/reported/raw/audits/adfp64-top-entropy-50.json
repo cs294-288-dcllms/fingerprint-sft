@@ -1,0 +1,13 @@
+{
+  "examples": 9000,
+  "response_tokens": 28560553,
+  "kept_tokens": 14280277,
+  "drop_rate": 0.5,
+  "drop_seed": 0,
+  "mask_mode": "top-entropy",
+  "entropy_file": "entropy/adfp64.npz",
+  "protect_special": false,
+  "kept_fraction": 0.5000000175066638,
+  "longest_example": 4096,
+  "rank": 0
+}

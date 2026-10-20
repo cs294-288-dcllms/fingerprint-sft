@@ -6,3 +6,4 @@ detection-adfp/
 entropy/
 results/
 *.nohup
+__pycache__/

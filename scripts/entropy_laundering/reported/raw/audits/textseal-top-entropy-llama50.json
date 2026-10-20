@@ -1,0 +1,12 @@
+{
+  "examples": 9000,
+  "response_tokens": 13267395,
+  "kept_tokens": 6633697,
+  "drop_rate": 0.5,
+  "drop_seed": 0,
+  "mask_mode": "top-entropy",
+  "entropy_file": "entropy/textseal-llama.npz",
+  "kept_fraction": 0.49999996231362676,
+  "longest_example": 4096,
+  "rank": 0
+}

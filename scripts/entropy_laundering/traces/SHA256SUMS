@@ -1,0 +1,5 @@
+22665a0515cd9504fddef448c13effe7e1268165c06523465ec3128f32c3c202  adfp-lambda256-partial912.jsonl.gz
+e5d75d0aac329324861d133661a7dce694ccde01948b1d67d2b4ba56e55b4a5e  adfp-lambda64-train9k.jsonl.gz
+2b5d8102a858cfa811873fd8182b01b8ecd5f119af249c6e9252ffb5c1acc051  control-train9k.jsonl.gz
+d90c1cb51825d95f08a7847caed6943d5473b8da857730f11f103c402e89156d  synthid-train9k.jsonl.gz
+9f159a4dab7f85fe6e2b723f10fe8e2fcbbead301a0d23557e74f8f927a9ecc1  textseal-alpha0.1-train9k.jsonl.gz
