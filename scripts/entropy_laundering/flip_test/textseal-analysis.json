@@ -1,0 +1,26 @@
+{
+ "positions": 4460243,
+ "flip_rate": 0.16310142743343806,
+ "expected_flip_rate_1_minus_pmax": 0.1624680082062084,
+ "trace_token_inside_top_p": 0.9989177719689264,
+ "auroc_reference_entropy": 0.8448898381747365,
+ "auroc_teacher_entropy": 0.8916023242051575,
+ "tau_reference": 0.394287109375,
+ "masked_share": 0.49864659840282244,
+ "flips_captured_by_mask": 0.9524311588624716,
+ "flip_rate_kept": 0.015475203451634455,
+ "flip_rate_masked": 0.31152901080669126,
+ "flip_rate_by_reference_entropy_decile": [
+  0.0003,
+  0.0003,
+  0.0021,
+  0.0148,
+  0.0586,
+  0.1456,
+  0.2337,
+  0.3029,
+  0.3846,
+  0.4874
+ ],
+ "corr_reference_vs_teacher_entropy": 0.8517847173897709
+}
